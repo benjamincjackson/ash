@@ -112,6 +112,33 @@ func (n *Node) Depth() (int, error) {
 	return n.depth, nil
 }
 
+// aggregate k=v pairs into the correct format for metadata comments:
+// AA={"S:L1234I", "...", ...}
+func aggregateComments(comments []string) string {
+	m := make(map[string][]string)
+	for _, comment := range comments {
+		sa := strings.Split(comment, "=")
+		k := sa[0]
+		v := sa[1]
+		if _, ok := m[k]; ok {
+			m[k] = append(m[k], "\""+v+"\"")
+		} else {
+			m[k] = []string{"\"" + v + "\""}
+		}
+	}
+	newstring := "&"
+	list := make([]string, 0)
+	for k, vs := range m {
+		temp := k + "={"
+		temp = temp + strings.Join(vs, ",")
+		temp = temp + "}"
+		list = append(list, temp)
+	}
+	newstring = newstring + strings.Join(list, ",")
+
+	return newstring
+}
+
 // Recursive function that outputs newick representation
 // from the current node
 func (n *Node) Newick(parent *Node, newick *bytes.Buffer) {
@@ -144,11 +171,14 @@ func (n *Node) Newick(parent *Node, newick *bytes.Buffer) {
 					newick.WriteString(strconv.FormatFloat(n.br[i].length, 'f', -1, 64))
 				}
 				if len(n.br[i].comment) != 0 {
-					for _, c := range n.br[i].comment {
-						newick.WriteString("[")
-						newick.WriteString(c)
-						newick.WriteString("]")
-					}
+					newick.WriteString("[")
+					newick.WriteString(aggregateComments(n.br[i].comment))
+					newick.WriteString("]")
+					// for _, c := range n.br[i].comment {
+					// 	newick.WriteString("[")
+					// 	newick.WriteString(c)
+					// 	newick.WriteString("]")
+					// }
 				}
 				nbchild++
 			}
@@ -195,8 +225,8 @@ func (n *Node) NewickOptionalComments(parent *Node, newick *bytes.Buffer, annota
 					newick.WriteString(strconv.FormatFloat(n.br[i].length, 'f', -1, 64))
 				}
 				if len(n.br[i].comment) != 0 {
-					newick.WriteString("[&")
-					newick.WriteString(strings.Join(n.br[i].comment, ","))
+					newick.WriteString("[")
+					newick.WriteString(aggregateComments(n.br[i].comment))
 					newick.WriteString("]")
 				}
 				nbchild++

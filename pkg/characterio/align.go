@@ -627,3 +627,119 @@ func TypeAlignment(t *tree.Tree, alignmentFile string, configFile string, genban
 
 	return characterStates, idx, states, nil
 }
+
+func getAlignmentDims(infile string) (int, int, error) {
+	n := 0
+	l := 0
+
+	f, err := os.Open(infile)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer f.Close()
+
+	s := bufio.NewScanner(f)
+
+	for s.Scan() {
+		line := s.Text()
+
+		if string(line[0]) == ">" {
+			n++
+		}
+
+		if n == 1 && string(line[0]) != ">" {
+			l += len(line)
+		}
+	}
+
+	err = s.Err()
+
+	if err != nil {
+		return 0, 0, err
+	}
+
+	return n, l, err
+}
+
+// for every record in an alignment, type it at each nucleotide
+func TypeAlignmentNuc(t *tree.Tree, alignmentFile string) ([]CharacterStruct, []StartStop, [][]byte, error) {
+
+	var err error
+	config := make([]CharacterStruct, 0)
+
+	_, l, err := getAlignmentDims(alignmentFile)
+	if err != nil {
+		return make([]CharacterStruct, 0), make([]StartStop, 0), make([][]byte, 0), err
+	}
+
+	for i := 0; i < l; i++ {
+		config = append(config, CharacterStruct{V: variant{vtype: "nuc", vpos: i + 1}})
+	}
+
+	characterStates, err := countVariantsFasta(alignmentFile, config)
+	if err != nil {
+		return make([]CharacterStruct, 0), make([]StartStop, 0), make([][]byte, 0), err
+	}
+
+	// the array of start/stop positions and the total length of the byte slice of characters
+	// idx is []StartStop, length is int
+	idx, length := getIndex(characterStates)
+
+	cErr := make(chan error)
+	cFR := make(chan fastaio.FastaRecord)
+	cFRDone := make(chan bool)
+	cTypeVariantsDone := make(chan bool)
+	cNS := make(chan NodeStates)
+	cNSResults := make(chan [][]byte)
+
+	var wgTypeVariants sync.WaitGroup
+	wgTypeVariants.Add(runtime.NumCPU())
+
+	go fastaio.ReadAlignment(alignmentFile, cFR, cErr, cFRDone)
+
+	for n := 0; n < runtime.NumCPU(); n++ {
+		go func() {
+			typeVariants(idx, length, characterStates, cFR, cNS, cErr)
+			wgTypeVariants.Done()
+		}()
+	}
+
+	go func() {
+		wgTypeVariants.Wait()
+		cTypeVariantsDone <- true
+	}()
+
+	go assignNodeStatesToStatesArray(t, length, cNS, cErr, cNSResults)
+
+	for n := 1; n > 0; {
+		select {
+		case err := <-cErr:
+			return make([]CharacterStruct, 0), make([]StartStop, 0), make([][]byte, 0), err
+		case <-cFRDone:
+			close(cFR)
+			n--
+		}
+	}
+
+	for n := 1; n > 0; {
+		select {
+		case err := <-cErr:
+			return make([]CharacterStruct, 0), make([]StartStop, 0), make([][]byte, 0), err
+		case <-cTypeVariantsDone:
+			close(cNS)
+			n--
+		}
+	}
+
+	var states [][]byte
+	for n := 1; n > 0; {
+		select {
+		case err := <-cErr:
+			return make([]CharacterStruct, 0), make([]StartStop, 0), make([][]byte, 0), err
+		case states = <-cNSResults:
+			n--
+		}
+	}
+
+	return characterStates, idx, states, nil
+}

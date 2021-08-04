@@ -98,12 +98,12 @@ func labelEdge(upnode, downnode *tree.Node, edge *tree.Edge, characters []charac
 	}
 }
 
-func LabelChangesAnno(t *tree.Tree, regions []annotation.Region, characters []characterio.CharacterStruct, states [][]byte, transitions [][]characterio.Transition) {
-	labelChangesAnno(t.Root(), nil, regions, characters, states, transitions)
+func LabelChangesAnno(t *tree.Tree, regions []annotation.Region, characters []characterio.CharacterStruct, states [][]byte) {
+	labelChangesAnno(t.Root(), nil, regions, characters, states)
 }
 
 // recursive function to label branches with state changes
-func labelChangesAnno(cur, prev *tree.Node, regions []annotation.Region, characters []characterio.CharacterStruct, states [][]byte, transitions [][]characterio.Transition) {
+func labelChangesAnno(cur, prev *tree.Node, regions []annotation.Region, characters []characterio.CharacterStruct, states [][]byte) {
 
 	// Base state: if cur is a tip, there's nothing to do here
 	if len(cur.Neigh()) == 1 {
@@ -113,15 +113,15 @@ func labelChangesAnno(cur, prev *tree.Node, regions []annotation.Region, charact
 	for i, n := range cur.Neigh() {
 		if n != prev {
 			// we see if we need to label this edge with a change
-			labelEdgeAnno(cur, n, cur.Edges()[i], regions, characters, states, transitions)
+			labelEdgeAnno(cur, n, cur.Edges()[i], regions, characters, states)
 			// and then we carry on recurring down the tree
-			labelChangesAnno(n, cur, regions, characters, states, transitions)
+			labelChangesAnno(n, cur, regions, characters, states)
 		}
 	}
 }
 
 // label an edge with annotated changes - amino acid changing versus neutral nucleotide change
-func labelEdgeAnno(upnode, downnode *tree.Node, edge *tree.Edge, regions []annotation.Region, characters []characterio.CharacterStruct, states [][]byte, transitions [][]characterio.Transition) {
+func labelEdgeAnno(upnode, downnode *tree.Node, edge *tree.Edge, regions []annotation.Region, characters []characterio.CharacterStruct, states [][]byte) {
 	up_id := upnode.Id()
 	down_id := downnode.Id()
 
@@ -168,7 +168,7 @@ func labelEdgeAnno(upnode, downnode *tree.Node, edge *tree.Edge, regions []annot
 					der := strings.Join(downstate, "|")
 					// trans := anc + "->" + der
 					// number := getTransitionNumber(transitions[i], trans)
-					label := "nuc:" + strconv.Itoa(pos+1) + "=" + anc + "->" + der
+					label := "nuc=" + anc + strconv.Itoa(pos+1) + der
 					edge.AddComment(label)
 
 					// Skipping this for now (means we can't summarise things). To do: re-implement this
@@ -178,7 +178,6 @@ func labelEdgeAnno(upnode, downnode *tree.Node, edge *tree.Edge, regions []annot
 				}
 			}
 		case "CDS":
-
 			// 1-based position of amino acid in this CDS:
 			AACounter := 1
 
@@ -187,7 +186,6 @@ func labelEdgeAnno(upnode, downnode *tree.Node, edge *tree.Edge, regions []annot
 				// if the bitsets for each codon's (three nucleotides') states are different:
 				if bitsets.Different(states[up_id][codonstart-1:codonstart+2], states[down_id][codonstart-1:codonstart+2]) {
 					// then we need to get the nucleotides and attempt to translate them
-
 					nuclabels := make([]string, 0)
 
 					upcodon := ""
@@ -242,8 +240,7 @@ func labelEdgeAnno(upnode, downnode *tree.Node, edge *tree.Edge, regions []annot
 						anc := strings.Join(upstate, "|")
 						der := strings.Join(downstate, "|")
 						if anc != der {
-
-							// we don't care about transitios to missing data:
+							// we don't care about transitions to missing data:
 							if !bitsets.IsAnyBitSet(states[down_id][pos : pos+1]) {
 								continue
 							}
@@ -253,10 +250,9 @@ func labelEdgeAnno(upnode, downnode *tree.Node, edge *tree.Edge, regions []annot
 								continue
 							}
 
-							label := "nuc:" + strconv.Itoa(pos+1) + "=" + anc + "->" + der
+							label := "nuc=" + anc + strconv.Itoa(pos+1) + der
 							nuclabels = append(nuclabels, label)
 						}
-
 						// increment the nucleotide position:
 						pos++
 					}
@@ -287,7 +283,7 @@ func labelEdgeAnno(upnode, downnode *tree.Node, edge *tree.Edge, regions []annot
 
 						// They are different. We label the edge with the AA change, we don't label any SNPs
 						case true:
-							label := "AA:" + region.Name + ":" + strconv.Itoa(AACounter) + "=" + upAA + "->" + downAA
+							label := "AA=" + region.Name + ":" + upAA + strconv.Itoa(AACounter) + downAA
 							edge.AddComment(label)
 
 						// They are the same. We label the edge with any nucleotide changes that there are

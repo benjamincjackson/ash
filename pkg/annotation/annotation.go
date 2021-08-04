@@ -39,10 +39,15 @@ func GetIUPACMap() map[string]string {
 
 // get the positions of the CDS and the not-CDS from the genbank.
 // return a slice of Region structs
-func GetRegions(genbankFileIn string) ([]Region, error) {
+func GetRegions(genbankFileIn string, nuc bool) ([]Region, error) {
 	gb, err := genbank.ReadGenBank(genbankFileIn)
 	if err != nil {
 		return make([]Region, 0), err
+	}
+
+	if nuc {
+		REGION := Region{Whichtype: "int", Start: 1, Stop: len(gb.ORIGIN)}
+		return []Region{REGION}, nil
 	}
 
 	CDSFEATS := make([]genbank.GenbankFeature, 0)
@@ -57,6 +62,7 @@ func GetRegions(genbankFileIn string) ([]Region, error) {
 	// we get all the CDSes
 	for _, feat := range CDSFEATS {
 		REGION := Region{Whichtype: "CDS", Name: feat.Info["gene"], Codonstarts: make([]int, 0)}
+
 		// these are genbank positions, so they are 1-based, inclusive
 		positions, err := parsePositions(feat.Pos)
 		if err != nil {
@@ -64,11 +70,13 @@ func GetRegions(genbankFileIn string) ([]Region, error) {
 		}
 		REGION.Start = positions[0]
 		REGION.Stop = positions[len(positions)-1]
-		// how many codons we have already defined if this CDS is two ranges Join()ed together.
+
+		// how many codons we have already defined if this CDS is two ranges Join()ed together:
 		previouscodons := 0
 		for i := 0; i < len(positions); i = i + 2 {
 			start := positions[i]
 			stop := positions[i+1]
+
 			// start-1 to get the start position as 0-based
 			if (stop-(start-1))%3 != 0 {
 				return make([]Region, 0), errors.New("CDS position range is not a multiple of 3")
@@ -91,6 +99,7 @@ func GetRegions(genbankFileIn string) ([]Region, error) {
 	for i, cdsregion := range cdsregions {
 		start := newstart
 		stop := cdsregion.Start - 1
+
 		// hopefully this deals with any cases where there isn't an intergenic region:
 		if !((stop - start) > 0) {
 			continue

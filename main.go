@@ -2,15 +2,12 @@ package main
 
 import (
 	"bufio"
-	"bytes"
-	"encoding/gob"
 	"errors"
 	"log"
 	"os"
 	"runtime"
 	"runtime/pprof"
 	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -24,7 +21,8 @@ import (
 
 // to do possibly - sanity check arguments if --civet is given
 func checkArgs(treeFile string, alignmentFile string, variantsConfig string, genbankFile string, tipFile string,
-	algorithmUp string, algorithmDown string, treeOut string, civet bool) (int, int, string, error) {
+	algorithmUp string, algorithmDown string, treeOut string,
+	civet bool, nuc bool) (int, int, string, string, error) {
 
 	algoUp := -1
 	switch algorithmUp {
@@ -33,7 +31,7 @@ func checkArgs(treeFile string, alignmentFile string, variantsConfig string, gen
 	case "soft":
 		algoUp = 1
 	default:
-		return -1, -1, "", errors.New("unknown up-pass algorithm: choose one of soft or hard")
+		return -1, -1, "", "", errors.New("unknown up-pass algorithm: choose one of soft or hard")
 	}
 
 	algoDown := -1
@@ -45,24 +43,35 @@ func checkArgs(treeFile string, alignmentFile string, variantsConfig string, gen
 	case "downpass":
 		algoDown = 2
 	default:
-		return -1, -1, "", errors.New("unknown down-pass algorithm: choose one of acctrans, deltrans or downpass")
+		return -1, -1, "", "", errors.New("unknown down-pass algorithm: choose one of acctrans, deltrans or downpass")
 	}
 
+	preset := "none"
+
+	if civet && nuc {
+		return algoUp, algoDown, "", "", errors.New("either use --civet or --nuc, not both")
+	} else if civet {
+		preset = "civet"
+	} else if nuc {
+		preset = "nuc"
+	}
+
+	// this is all wrong now that we have presets (civet and nuc)
 	if len(alignmentFile) > 0 && len(tipFile) > 0 {
-		return algoUp, algoDown, "", errors.New("either use a --tipfile OR an --alignment and a --variants-config file, not a mixture")
+		return algoUp, algoDown, "", "", errors.New("either use a --tipfile OR an --alignment and a --variants-config file, not a mixture")
 	}
 	if len(variantsConfig) > 0 && len(tipFile) > 0 {
-		return algoUp, algoDown, "", errors.New("either use a --tipfile OR an --alignment and a --variants-config file, not a mixture")
+		return algoUp, algoDown, "", "", errors.New("either use a --tipfile OR an --alignment and a --variants-config file, not a mixture")
 	}
-	if len(variantsConfig) > 0 && len(alignmentFile) == 0 || len(variantsConfig) == 0 && len(alignmentFile) > 0 {
-		return algoUp, algoDown, "", errors.New("if you provide an --alignment file you must provide a --variants-config file, and vice versa")
-	}
+	// if len(variantsConfig) > 0 && len(alignmentFile) == 0 || len(variantsConfig) == 0 && len(alignmentFile) > 0 {
+	// 	return algoUp, algoDown, "", "", errors.New("if you provide an --alignment file you must provide a --variants-config file, and vice versa")
+	// }
 
 	if len(variantsConfig) > 0 {
 		aa := false
 		f, err := os.Open(variantsConfig)
 		if err != nil {
-			return algoUp, algoDown, "", err
+			return algoUp, algoDown, "", "", err
 		}
 		defer f.Close()
 		s := bufio.NewScanner(f)
@@ -76,10 +85,10 @@ func checkArgs(treeFile string, alignmentFile string, variantsConfig string, gen
 		}
 		err = s.Err()
 		if err != nil {
-			return algoUp, algoDown, "", err
+			return algoUp, algoDown, "", "", err
 		}
 		if aa && len(genbankFile) == 0 {
-			return algoUp, algoDown, "", errors.New("you must provide a --genbank file if there are amino acids in your --variants-config file")
+			return algoUp, algoDown, "", "", errors.New("you must provide a --genbank file if there are amino acids in your --variants-config file")
 		}
 	}
 
@@ -90,7 +99,7 @@ func checkArgs(treeFile string, alignmentFile string, variantsConfig string, gen
 		s = "csv"
 	}
 
-	return algoUp, algoDown, s, nil
+	return algoUp, algoDown, s, preset, nil
 }
 
 func readTree(treeFile string) (*tree.Tree, error) {
@@ -121,20 +130,20 @@ func readTree(treeFile string) (*tree.Tree, error) {
 	return t, nil
 }
 
-func getRealSizeOf(v interface{}) (int, error) {
-	b := new(bytes.Buffer)
-	if err := gob.NewEncoder(b).Encode(v); err != nil {
-		return 0, err
-	}
-	return b.Len(), nil
-}
+// func getRealSizeOf(v interface{}) (int, error) {
+// 	b := new(bytes.Buffer)
+// 	if err := gob.NewEncoder(b).Encode(v); err != nil {
+// 		return 0, err
+// 	}
+// 	return b.Len(), nil
+// }
 
 func ash(treeIn string, alignmentFile string, variantsConfig string, genbankFile string, tipFile string,
 	algorithmUp string, algorithmDown string, annotateNodes bool, annotateTips bool, threshold int,
-	treeOut string, childrenOut string, summarize bool, civet bool) error {
+	treeOut string, childrenOut string, summarize bool, civet bool, nuc bool) error {
 
 	// algoUp, algoDown, input, err := checkArgs(treeIn, alignmentFile, variantsConfig, genbankFile, tipFile, algorithmUp, algorithmDown, treeOut)
-	algoUp, algoDown, input, err := checkArgs(treeIn, alignmentFile, variantsConfig, genbankFile, tipFile, algorithmUp, algorithmDown, treeOut, civet)
+	algoUp, algoDown, input, preset, err := checkArgs(treeIn, alignmentFile, variantsConfig, genbankFile, tipFile, algorithmUp, algorithmDown, treeOut, civet, nuc)
 	if err != nil {
 		return err
 	}
@@ -158,11 +167,20 @@ func ash(treeIn string, alignmentFile string, variantsConfig string, genbankFile
 	var idx []characterio.StartStop
 	var states [][]byte
 
+	// to do - incorporate the civet/nuc presets into the logic here?
 	switch input {
 	case "alignment":
-		characterStates, idx, states, err = characterio.TypeAlignment(t, alignmentFile, variantsConfig, genbankFile)
-		if err != nil {
-			return err
+		switch preset {
+		case "none":
+			characterStates, idx, states, err = characterio.TypeAlignment(t, alignmentFile, variantsConfig, genbankFile)
+			if err != nil {
+				return err
+			}
+		default:
+			characterStates, idx, states, err = characterio.TypeAlignmentNuc(t, alignmentFile)
+			if err != nil {
+				return err
+			}
 		}
 	case "csv":
 		// TO DO- in tipfile columns that contain nucleotide data, IUPAC codes are treated as non-overlapping states, e.g. W != (A & T), which is different from the same data in an alignment input
@@ -173,9 +191,6 @@ func ash(treeIn string, alignmentFile string, variantsConfig string, genbankFile
 	default:
 		return errors.New("couldn't choose where the states are coming from")
 	}
-	// time.Sleep(10 * time.Second)
-
-	// fmt.Println(characterStates)
 
 	/*
 		TO DO- check all the tree's tips are in the character state input (we do the converse already when we read the character states in)
@@ -190,7 +205,6 @@ func ash(treeIn string, alignmentFile string, variantsConfig string, genbankFile
 		parsimony.UpPass(t, 1, states, idx)
 	}
 	// fmt.Println("finished uppass")
-	// time.Sleep(10 * time.Second)
 
 	// fmt.Println(algoDown)
 	switch algoDown {
@@ -202,44 +216,25 @@ func ash(treeIn string, alignmentFile string, variantsConfig string, genbankFile
 	case 2: // Downpass only
 		parsimony.DownPass(t, states, idx)
 	}
-	// fmt.Println("finished downpass")
-	// time.Sleep(10 * time.Second)
 
-	// fmt.Println(t.Root().Id())
-	// fmt.Println(t.Root().Nneigh())
-	// fmt.Println(t.Rooted())
-
-	// t.PreOrder(func(cur *tree.Node, prev *tree.Node, e *tree.Edge) bool {
-	// 	fmt.Print(cur.Name() + " ")
-	// 	for i := range idx {
-	// 		start := idx[i].Start
-	// 		stop := idx[i].Stop
-	// 		ba := downstates[cur.Id()][start:stop]
-	// 		for _, k := range bitsets.GetSetBits(ba) {
-	// 			fmt.Print(characterStates[i].StateKey[k-1])
-	// 		}
-	// 		fmt.Println()
-	// 	}
-	// 	return true
-	// })
-
-	switch civet {
-	case true:
+	switch preset {
+	case "civet":
 		// genbank annotation parsing:
-		features, err := annotation.GetRegions(genbankFile)
+		features, err := annotation.GetRegions(genbankFile, nuc)
 		if err != nil {
 			return err
 		}
-		// for _, f := range features {
-		// 	fmt.Println(f)
-		// }
 
-		transitions := make([][]characterio.Transition, len(characterStates), len(characterStates))
-		for i := range transitions {
-			transitions[i] = make([]characterio.Transition, 0)
+		parsimony.LabelChangesAnno(t, features, characterStates, states)
+
+	case "nuc":
+		// genbank annotation parsing:
+		features, err := annotation.GetRegions(genbankFile, nuc)
+		if err != nil {
+			return err
 		}
 
-		parsimony.LabelChangesAnno(t, features, characterStates, states, transitions)
+		parsimony.LabelChangesAnno(t, features, characterStates, states)
 
 	default:
 		// we can keep all the transitions (structs containing pointers to the relevant nodes and edge) in an array
@@ -282,21 +277,21 @@ func ash(treeIn string, alignmentFile string, variantsConfig string, genbankFile
 		}
 	}
 
-	f, err := os.Create("branchlengths.tsv")
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	var tip string
-	f.WriteString("branch\tlength\tterminal\tnummuts\ttransitions\n")
-	for i, e := range t.Edges() {
-		if e.Right().Tip() {
-			tip = "true"
-		} else {
-			tip = "false"
-		}
-		f.WriteString(strconv.Itoa(i) + "\t" + strconv.FormatFloat(e.Length()*29903, 'f', 4, 64) + "\t" + tip + "\t" + strconv.Itoa(len(e.GetComments())) + "\t" + strings.Join(e.GetComments(), " ") + "\n")
-	}
+	// f, err := os.Create("branchlengths.tsv")
+	// if err != nil {
+	// 	return err
+	// }
+	// defer f.Close()
+	// var tip string
+	// f.WriteString("branch\tlength\tterminal\tnummuts\ttransitions\n")
+	// for i, e := range t.Edges() {
+	// 	if e.Right().Tip() {
+	// 		tip = "true"
+	// 	} else {
+	// 		tip = "false"
+	// 	}
+	// 	f.WriteString(strconv.Itoa(i) + "\t" + strconv.FormatFloat(e.Length()*29903, 'f', 4, 64) + "\t" + tip + "\t" + strconv.Itoa(len(e.GetComments())) + "\t" + strings.Join(e.GetComments(), " ") + "\n")
+	// }
 
 	// write the treefile...
 	if len(treeOut) > 0 {
@@ -347,6 +342,7 @@ var threshold int
 var childrenOut string
 var summarize bool
 var civet bool
+var nuc bool
 
 var mainCmd = &cobra.Command{
 	Use:   "ash",
@@ -361,7 +357,7 @@ Example usage:
 
 		err = ash(treeFile, alignmentFile, variantsConfig, genbankFile, tipFile,
 			algorithmUp, algorithmDown, annotateNodes, annotateTips, threshold,
-			treeOut, childrenOut, summarize, civet)
+			treeOut, childrenOut, summarize, civet, nuc)
 
 		return
 	},
@@ -383,11 +379,13 @@ func init() {
 	mainCmd.Flags().StringVarP(&childrenOut, "children-out", "", "", "CSV format file of the children of transitions to write (optionally)")
 	mainCmd.Flags().BoolVarP(&summarize, "summarize-children", "", false, "Optionally summarize the counts of children with different states under each transition to stdout")
 	mainCmd.Flags().BoolVarP(&civet, "civet", "", false, "annotate all amino acid changes + neutral nucleotide changes")
+	mainCmd.Flags().BoolVarP(&nuc, "nuc", "", false, "annotate all nucleotide changes")
 
 	mainCmd.Flags().Lookup("annotate-nodes").NoOptDefVal = "true"
 	mainCmd.Flags().Lookup("annotate-tips").NoOptDefVal = "true"
 	mainCmd.Flags().Lookup("summarize-children").NoOptDefVal = "true"
 	mainCmd.Flags().Lookup("civet").NoOptDefVal = "true"
+	mainCmd.Flags().Lookup("nuc").NoOptDefVal = "true"
 
 	mainCmd.Flags().SortFlags = false
 }

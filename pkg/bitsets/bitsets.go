@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// Set the 8 - kth bit of a byte to 1. k ∈ {1,2,3,4,5,6,7,8}.
+// Set the 8 - kth bit of a byte to 1. k ∈ {0,1,2,3,4,5,6,7}.
 // E.g. if k = 0, then returned byte = byte & 10000000
 func setBit(b byte, k int) byte {
 	b = b | (1 << (7 - k))
