@@ -23,6 +23,10 @@ type Region struct {
 // TO DO - write a test for this
 func GetIUPACMap() map[string]string {
 	m := make(map[string]string)
+	m["A"] = "A"
+	m["T"] = "T"
+	m["C"] = "C"
+	m["G"] = "G"
 	m["AC"] = "M"
 	m["AG"] = "R"
 	m["AT"] = "W"

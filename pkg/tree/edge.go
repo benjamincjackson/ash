@@ -18,6 +18,7 @@ type Edge struct {
 	ntaxright     int             // Number of taxa below : Initialized with hashes / ReinitIndexes
 	ntaxleft      int             // Number of taxa above : Initialized with hashes / ReinitIndexes
 	id            int             // this field is used at discretion of the user to store information
+	SynLen        float64         // the length of this branch in units of synonymous snps
 }
 
 // Constant for uninitialized values

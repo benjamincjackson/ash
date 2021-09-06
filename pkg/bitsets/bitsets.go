@@ -221,8 +221,9 @@ func RandomlyChooseSetBit(ba []byte) []byte {
 // if the intersection is not an empty set, take it, else take the union
 // TO DO - test this
 func fitch(aa, ba []byte) []byte {
-	if IsAnyBitSet(Intersection(aa, ba)) {
-		return Intersection(aa, ba)
+	i := Intersection(aa, ba)
+	if IsAnyBitSet(i) {
+		return i
 	} else {
 		return Union(aa, ba)
 	}

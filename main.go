@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"errors"
+	"fmt"
 	"log"
 	"os"
 	"runtime"
@@ -12,17 +13,34 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/benjamincjackson/ash/pkg/ancestry"
 	"github.com/benjamincjackson/ash/pkg/annotation"
+	"github.com/benjamincjackson/ash/pkg/bitsets"
 	"github.com/benjamincjackson/ash/pkg/characterio"
+	"github.com/benjamincjackson/ash/pkg/epistasis"
 	"github.com/benjamincjackson/ash/pkg/newick"
+	"github.com/benjamincjackson/ash/pkg/paper"
 	"github.com/benjamincjackson/ash/pkg/parsimony"
 	"github.com/benjamincjackson/ash/pkg/tree"
 )
 
+func morethanone(ba ...bool) bool {
+	counter := 0
+	for _, b := range ba {
+		if b {
+			counter++
+		}
+		if counter > 1 {
+			return true
+		}
+	}
+	return false
+}
+
 // to do possibly - sanity check arguments if --civet is given
 func checkArgs(treeFile string, alignmentFile string, variantsConfig string, genbankFile string, tipFile string,
 	algorithmUp string, algorithmDown string, treeOut string,
-	civet bool, nuc bool) (int, int, string, string, error) {
+	civet bool, nuc bool, p bool, epi bool, common_anc bool) (int, int, string, string, error) {
 
 	algoUp := -1
 	switch algorithmUp {
@@ -48,12 +66,18 @@ func checkArgs(treeFile string, alignmentFile string, variantsConfig string, gen
 
 	preset := "none"
 
-	if civet && nuc {
-		return algoUp, algoDown, "", "", errors.New("either use --civet or --nuc, not both")
+	if morethanone(civet, nuc, p, epi, common_anc) {
+		return algoUp, algoDown, "", "", errors.New("use one preset, not a combination")
 	} else if civet {
 		preset = "civet"
 	} else if nuc {
 		preset = "nuc"
+	} else if p {
+		preset = "paper"
+	} else if common_anc {
+		preset = "common_anc"
+	} else if epi {
+		preset = "epistasis"
 	}
 
 	// this is all wrong now that we have presets (civet and nuc)
@@ -140,10 +164,11 @@ func readTree(treeFile string) (*tree.Tree, error) {
 
 func ash(treeIn string, alignmentFile string, variantsConfig string, genbankFile string, tipFile string,
 	algorithmUp string, algorithmDown string, annotateNodes bool, annotateTips bool, threshold int,
-	treeOut string, childrenOut string, summarize bool, civet bool, nuc bool) error {
+	treeOut string, childrenOut string,
+	summarize bool, civet bool, nuc bool, p bool, epi bool, common_anc bool, outgroup string) error {
 
 	// algoUp, algoDown, input, err := checkArgs(treeIn, alignmentFile, variantsConfig, genbankFile, tipFile, algorithmUp, algorithmDown, treeOut)
-	algoUp, algoDown, input, preset, err := checkArgs(treeIn, alignmentFile, variantsConfig, genbankFile, tipFile, algorithmUp, algorithmDown, treeOut, civet, nuc)
+	algoUp, algoDown, input, preset, err := checkArgs(treeIn, alignmentFile, variantsConfig, genbankFile, tipFile, algorithmUp, algorithmDown, treeOut, civet, nuc, p, epi, common_anc)
 	if err != nil {
 		return err
 	}
@@ -192,11 +217,8 @@ func ash(treeIn string, alignmentFile string, variantsConfig string, genbankFile
 		return errors.New("couldn't choose where the states are coming from")
 	}
 
-	/*
-		TO DO- check all the tree's tips are in the character state input (we do the converse already when we read the character states in)
-	*/
+	// TO DO- check all the tree's tips are in the character state input (we do the converse already when we read the character states in)
 
-	// fmt.Println("starting uppass")
 	// TO DO- maybe just use the hard polytomies interpretation?
 	switch algoUp {
 	case 0: // hard polytomies
@@ -204,7 +226,6 @@ func ash(treeIn string, alignmentFile string, variantsConfig string, genbankFile
 	case 1: // soft polytomies (resolve them [separately for each character!])
 		parsimony.UpPass(t, 1, states, idx)
 	}
-	// fmt.Println("finished uppass")
 
 	// fmt.Println(algoDown)
 	switch algoDown {
@@ -236,45 +257,108 @@ func ash(treeIn string, alignmentFile string, variantsConfig string, genbankFile
 
 		parsimony.LabelChangesAnno(t, features, characterStates, states)
 
-	default:
-		// we can keep all the transitions (structs containing pointers to the relevant nodes and edge) in an array
-		// that matches the dimensions of the characters
+	case "common_anc":
+		// get the sequence at the node immediately ancestral to a set of samples
+		// first step is as for "nuc"
+		features, err := annotation.GetRegions(genbankFile, nuc)
+		if err != nil {
+			return err
+		}
+
+		parsimony.LabelChangesAnno(t, features, characterStates, states)
+
+		// then get the ancestral node and print its sequence
+		commonAncNodeID, err := ancestry.MRCA(t, outgroup)
+		if err != nil {
+			return err
+		}
+		fmt.Println(">root")
+		IUPACMap := annotation.GetIUPACMap()
+		for i := range states[commonAncNodeID] {
+			setBits := bitsets.GetSetBits(states[commonAncNodeID][i : i+1])
+			nucstates := make([]string, 0)
+			for _, b := range setBits {
+				nucstates = append(nucstates, characterStates[i].StateKey[b-1])
+			}
+			sort.Strings(nucstates)
+			if nuc, ok := IUPACMap[strings.Join(nucstates, "")]; ok {
+				fmt.Print(nuc)
+			} else {
+				fmt.Print("N")
+			}
+		}
+		fmt.Println()
+
+	case "paper":
+		features, err := annotation.GetRegions(genbankFile, nuc)
+		if err != nil {
+			return err
+		}
 		transitions := make([][]characterio.Transition, len(characterStates), len(characterStates))
 		for i := range transitions {
 			transitions[i] = make([]characterio.Transition, 0)
 		}
+		paper.LabelChangesSynNonsyn(t, features, characterStates, states)
+		paper.GetPrintSynNonsynMutSpec(t)
 
+	case "epistasis":
+		features, err := annotation.GetRegions(genbankFile, nuc)
+		if err != nil {
+			return err
+		}
+		transitions := make([][]characterio.Transition, len(characterStates), len(characterStates))
+		for i := range transitions {
+			transitions[i] = make([]characterio.Transition, 0)
+		}
+		// label the changes
+		epistasis.LabelChangesAnno(t, features, characterStates, states)
+		// calculate the epistasis statistic
+		epistasis.Epistasis(t, features)
+	default:
+		// // we can keep all the transitions (structs containing pointers to the relevant nodes and edge) in an array
+		// // that matches the dimensions of the characters
+		// transitions := make([][]characterio.Transition, len(characterStates), len(characterStates))
 		// for i := range transitions {
-		// 	for j := range transitions[i] {
-		// 		fmt.Println(transitions[i][j])
-		// 	}
+		// 	transitions[i] = make([]characterio.Transition, 0)
 		// }
 
-		// to do- switch on whether we need to label the transitions or not
-		parsimony.LabelChanges(t, characterStates, states, idx, transitions)
+		// // to do- switch on whether we need to label the transitions or not
+		// parsimony.LabelChanges(t, characterStates, states, idx, transitions)
 
-		// if we do, we should sort them
-		for k := range transitions {
-			sort.SliceStable(transitions[k], func(i, j int) bool {
-				return transitions[k][i].Label < transitions[k][j].Label
-			})
-		}
+		// // if we do, we should sort them
+		// for k := range transitions {
+		// 	sort.SliceStable(transitions[k], func(i, j int) bool {
+		// 		return transitions[k][i].Label < transitions[k][j].Label
+		// 	})
+		// }
 
-		if annotateNodes {
-			parsimony.LabelNodes(t, characterStates, states, idx)
-		}
+		// if annotateNodes {
+		// 	parsimony.LabelNodes(t, characterStates, states, idx)
+		// }
 
-		if summarize {
-			// TO DO: swap between stdout + a hard file
-			fTrans := os.Stdout
-			var lines []string
-			for i := range transitions {
-				lines = characterio.SummarizeTransitions(threshold, transitions[i], states, idx[i], characterStates[i])
-				for _, l := range lines {
-					fTrans.WriteString(l + "\n")
-				}
-			}
+		// if summarize {
+		// 	// TO DO: swap between stdout + a hard file
+		// 	fTrans := os.Stdout
+		// 	var lines []string
+		// 	for i := range transitions {
+		// 		lines = characterio.SummarizeTransitions(threshold, transitions[i], states, idx[i], characterStates[i])
+		// 		for _, l := range lines {
+		// 			fTrans.WriteString(l + "\n")
+		// 		}
+		// 	}
+		// }
+	}
+
+	// write the treefile...
+	if len(treeOut) > 0 {
+		fout, err := os.Create(treeOut)
+		if err != nil {
+			return err
 		}
+		defer fout.Close()
+
+		// fout.WriteString(t.NewickOptionalComments(annotateNodes, annotateTips) + "\n")
+		fout.WriteString(t.NexusOptionalComments(annotateNodes, annotateTips))
 	}
 
 	// f, err := os.Create("branchlengths.tsv")
@@ -293,27 +377,7 @@ func ash(treeIn string, alignmentFile string, variantsConfig string, genbankFile
 	// 	f.WriteString(strconv.Itoa(i) + "\t" + strconv.FormatFloat(e.Length()*29903, 'f', 4, 64) + "\t" + tip + "\t" + strconv.Itoa(len(e.GetComments())) + "\t" + strings.Join(e.GetComments(), " ") + "\n")
 	// }
 
-	// write the treefile...
-	if len(treeOut) > 0 {
-		fout, err := os.Create(treeOut)
-		if err != nil {
-			return err
-		}
-		defer fout.Close()
-
-		// fout.WriteString(t.NewickOptionalComments(annotateNodes, annotateTips) + "\n")
-		fout.WriteString(t.NexusOptionalComments(annotateNodes, annotateTips))
-	}
-
 	// t.SortNeighborsByTips(t.Root(), nil)
-
-	// fmt.Println()
-
-	// // summarise the transitions (to stdout)
-	// if summarize {
-	// 	// TO DO: do this as we traverse the tree - don't keep everything in a map, if possible
-	// 	characterio.SummarizeTransitions(characters, atlas)
-	// }
 
 	// // TO DO write the genotypes to file? (if so, do this in align.go)
 
@@ -343,6 +407,10 @@ var childrenOut string
 var summarize bool
 var civet bool
 var nuc bool
+var p bool
+var common_anc bool
+var epi bool
+var outgroup string
 
 var mainCmd = &cobra.Command{
 	Use:   "ash",
@@ -357,7 +425,7 @@ Example usage:
 
 		err = ash(treeFile, alignmentFile, variantsConfig, genbankFile, tipFile,
 			algorithmUp, algorithmDown, annotateNodes, annotateTips, threshold,
-			treeOut, childrenOut, summarize, civet, nuc)
+			treeOut, childrenOut, summarize, civet, nuc, p, epi, common_anc, outgroup)
 
 		return
 	},
@@ -380,12 +448,19 @@ func init() {
 	mainCmd.Flags().BoolVarP(&summarize, "summarize-children", "", false, "Optionally summarize the counts of children with different states under each transition to stdout")
 	mainCmd.Flags().BoolVarP(&civet, "civet", "", false, "annotate all amino acid changes + neutral nucleotide changes")
 	mainCmd.Flags().BoolVarP(&nuc, "nuc", "", false, "annotate all nucleotide changes")
+	mainCmd.Flags().BoolVarP(&p, "paper", "", false, "do papery things")
+	mainCmd.Flags().BoolVarP(&epi, "epistasis", "", false, "do epistasis things")
+	mainCmd.Flags().BoolVarP(&common_anc, "common_anc", "", false, "do common_anc things")
+	mainCmd.Flags().StringVarP(&outgroup, "outgroup", "", "", "the outgroup")
 
 	mainCmd.Flags().Lookup("annotate-nodes").NoOptDefVal = "true"
 	mainCmd.Flags().Lookup("annotate-tips").NoOptDefVal = "true"
 	mainCmd.Flags().Lookup("summarize-children").NoOptDefVal = "true"
 	mainCmd.Flags().Lookup("civet").NoOptDefVal = "true"
 	mainCmd.Flags().Lookup("nuc").NoOptDefVal = "true"
+	mainCmd.Flags().Lookup("paper").NoOptDefVal = "true"
+	mainCmd.Flags().Lookup("epistais").NoOptDefVal = "true"
+	mainCmd.Flags().Lookup("common_anc").NoOptDefVal = "true"
 
 	mainCmd.Flags().SortFlags = false
 }

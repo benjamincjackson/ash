@@ -1,4 +1,4 @@
-package parsimony
+package epistasis
 
 import (
 	"sort"
@@ -12,91 +12,6 @@ import (
 	"github.com/benjamincjackson/ash/pkg/characterio"
 	"github.com/benjamincjackson/ash/pkg/tree"
 )
-
-// LabelChanges traverses over the tree and labels inferred changes onto the branches
-func LabelChanges(t *tree.Tree, characters []characterio.CharacterStruct, states [][]byte, idx []characterio.StartStop, transitions [][]characterio.Transition) {
-	labelChanges(t.Root(), nil, characters, states, idx, transitions)
-}
-
-// recursive function to label branches with state changes
-func labelChanges(cur, prev *tree.Node, characters []characterio.CharacterStruct, states [][]byte, idx []characterio.StartStop, transitions [][]characterio.Transition) {
-
-	// Base state: if cur is a tip, there's nothing to do here
-	if len(cur.Neigh()) == 1 {
-		return
-	}
-
-	for i, n := range cur.Neigh() {
-		if n != prev {
-			// we see if we need to label this edge with a change
-			labelEdge(cur, n, cur.Edges()[i], characters, states, idx, transitions)
-			// and then we carry on recurring down the tree
-			labelChanges(n, cur, characters, states, idx, transitions)
-		}
-	}
-}
-
-// type CharacterStruct struct {
-// 	Name     string   // name of the variant
-// 	V        variant  // detailed info about this variant
-// 	StateKey []string // the slice might be ["A", "C", "G", "T"] (if all four nucs are present at this site in the alignment)
-// }
-
-// label the branch between two nodes with any inferred changes, and record the transition
-func labelEdge(upnode, downnode *tree.Node, edge *tree.Edge, characters []characterio.CharacterStruct, states [][]byte, idx []characterio.StartStop, transitions [][]characterio.Transition) {
-
-	var start, stop int
-
-	// for every character
-	up_id := upnode.Id()
-	down_id := downnode.Id()
-	for i := range idx {
-		start = idx[i].Start
-		stop = idx[i].Stop
-
-		// if the states are different
-		if bitsets.Different(states[up_id][start:stop], states[down_id][start:stop]) {
-			// we don't care about transitios to missing data:
-			if !bitsets.IsAnyBitSet(states[down_id][start:stop]) {
-				continue
-			}
-
-			// we shouldn't care about transitions to ambiguous tips?
-			if downnode.Tip() && bitsets.IsSubset(states[up_id][start:stop], states[down_id][start:stop]) {
-				continue
-			}
-
-			// then we annotate the edge
-
-			// the set bits for this character
-			upstatebits := bitsets.GetSetBits(states[up_id][start:stop])
-			downstatebits := bitsets.GetSetBits(states[down_id][start:stop])
-
-			// then what these mean as states
-			upstate := make([]string, 0)
-			for _, b := range upstatebits {
-				upstate = append(upstate, characters[i].StateKey[b-1])
-			}
-
-			downstate := make([]string, 0)
-			for _, b := range downstatebits {
-				downstate = append(downstate, characters[i].StateKey[b-1])
-			}
-
-			// then we can build the label and add it to the edge
-			anc := strings.Join(upstate, "|")
-			der := strings.Join(downstate, "|")
-			trans := anc + "->" + der
-			number := getTransitionNumber(transitions[i], trans)
-			label := characters[i].Name + "=" + anc + "->" + der + "," + anc + "->" + der + "#" + strconv.Itoa(number)
-			edge.AddComment(label)
-
-			// and we can add the location of this transition to the array of transitions
-			transition := characterio.Transition{Upnode: upnode, Downnode: downnode, Edge: edge, Upstate: anc, Downstate: der, Number: number, Transition: trans, Label: label}
-			transitions[i] = append(transitions[i], transition)
-		}
-	}
-}
 
 func LabelChangesAnno(t *tree.Tree, regions []annotation.Region, characters []characterio.CharacterStruct, states [][]byte) {
 	labelChangesAnno(t.Root(), nil, regions, characters, states)
@@ -121,7 +36,6 @@ func labelChangesAnno(cur, prev *tree.Node, regions []annotation.Region, charact
 }
 
 // label an edge with annotated changes - amino acid changing versus neutral nucleotide change
-// TO DO: annotate the edge with its length in synonymous changes?
 func labelEdgeAnno(upnode, downnode *tree.Node, edge *tree.Edge, regions []annotation.Region, characters []characterio.CharacterStruct, states [][]byte) {
 	up_id := upnode.Id()
 	down_id := downnode.Id()
@@ -164,15 +78,16 @@ func labelEdgeAnno(upnode, downnode *tree.Node, edge *tree.Edge, regions []annot
 						downstate = append(downstate, characters[pos].StateKey[b-1])
 					}
 
-					// then we can build the label and add it to the edge
+					// then we can build the label and add it to the edge,
+					// and increment the synonymous branch length
 					anc := strings.Join(upstate, "|")
 					der := strings.Join(downstate, "|")
 					// trans := anc + "->" + der
 					// number := getTransitionNumber(transitions[i], trans)
-					label := "nuc=" + anc + strconv.Itoa(pos+1) + der
+					label := "syn=" + anc + strconv.Itoa(pos+1) + der
 					edge.AddComment(label)
-					// and increment the synonymous branch length
 					edge.SynLen++
+
 					// Skipping this for now (means we can't summarise things). To do: re-implement this
 					// // and we can add the location of this transition to the array of transitions
 					// transition := characterio.Transition{Upnode: upnode, Downnode: downnode, Edge: edge, Upstate: anc, Downstate: der, Number: number, Transition: trans, Label: label}
@@ -252,7 +167,7 @@ func labelEdgeAnno(upnode, downnode *tree.Node, edge *tree.Edge, regions []annot
 								continue
 							}
 
-							label := "nuc=" + anc + strconv.Itoa(pos+1) + der
+							label := "syn=" + anc + strconv.Itoa(pos+1) + der
 							nuclabels = append(nuclabels, label)
 						}
 						// increment the nucleotide position:
@@ -277,7 +192,6 @@ func labelEdgeAnno(upnode, downnode *tree.Node, edge *tree.Edge, regions []annot
 					// we switch on whether we know both the ancestral and derived amino acids unambiguously
 					ResolvedAAs := upAA != "X" && downAA != "X"
 					switch ResolvedAAs {
-
 					// if we can, we want to further switch on whether they're different
 					case true:
 						DifferentAAs := upAA != downAA
@@ -288,11 +202,11 @@ func labelEdgeAnno(upnode, downnode *tree.Node, edge *tree.Edge, regions []annot
 							label := "AA=" + region.Name + ":" + upAA + strconv.Itoa(AACounter) + downAA
 							edge.AddComment(label)
 
-						// They are the same. We label the edge with any nucleotide changes that there are
+						// They are the same. We label the edge with any nucleotide changes that there are,
+						// and increment the synonymous branch length
 						case false:
 							for _, label := range nuclabels {
 								edge.AddComment(label)
-								// and increment the synonymous branch length
 								edge.SynLen++
 							}
 						}
@@ -307,35 +221,6 @@ func labelEdgeAnno(upnode, downnode *tree.Node, edge *tree.Edge, regions []annot
 
 				AACounter++
 			}
-		}
-	}
-}
-
-func getTransitionNumber(ta []characterio.Transition, label string) int {
-	count := 0
-	for i := range ta {
-		if label == ta[i].Transition {
-			count++
-		}
-	}
-	return count
-}
-
-func LabelNodes(t *tree.Tree, characters []characterio.CharacterStruct, states [][]byte, idx []characterio.StartStop) {
-	for _, n := range t.Nodes() {
-		id := n.Id()
-		n.AddComment("nodenumber=" + strconv.Itoa(id))
-		for i := range idx {
-			start := idx[i].Start
-			stop := idx[i].Stop
-
-			statebits := bitsets.GetSetBits(states[id][start:stop])
-			state := make([]string, 0)
-			for _, b := range statebits {
-				state = append(state, characters[i].StateKey[b-1])
-			}
-			statestring := strings.Join(state, "|")
-			n.AddComment(characters[i].Name + "node=" + statestring)
 		}
 	}
 }

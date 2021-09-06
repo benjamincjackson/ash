@@ -17,7 +17,7 @@ func (t *Tree) postOrderRecur(cur *Node, prev *Node, e *Edge, f func(cur *Node, 
 	return
 }
 
-// TO DO do I need to visit the root for the ancestral reconstruction?!
+// reverse postorder traversal
 func (t *Tree) PostOrderRev(f func(cur *Node, prev *Node, e *Edge) (keep bool)) {
 	t.postOrderRecurRev(t.Root(), nil, nil, f)
 }
