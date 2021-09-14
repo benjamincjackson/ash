@@ -318,7 +318,7 @@ func InPlaceVarMax(toSet []byte, args [][]byte) {
 	}
 
 	maxes := make([]int, 0)
-	max := -1
+	max := 1
 	for i, v := range statecounts {
 		if v > max {
 			max = v
