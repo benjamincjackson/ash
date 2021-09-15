@@ -4,10 +4,7 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
-	"log"
 	"os"
-	"runtime"
-	"runtime/pprof"
 	"sort"
 	"strings"
 
@@ -227,6 +224,13 @@ func ash(treeIn string, alignmentFile string, variantsConfig string, genbankFile
 		parsimony.UpPass(t, 1, states, idx)
 	}
 
+	// for _, n := range t.Nodes() {
+	// 	if n.Tip() {
+	// 		continue
+	// 	}
+	// 	fmt.Println(states[n.Id()])
+	// }
+
 	// fmt.Println(algoDown)
 	switch algoDown {
 	case 0: // Acctrans
@@ -237,6 +241,13 @@ func ash(treeIn string, alignmentFile string, variantsConfig string, genbankFile
 	case 2: // Downpass only
 		parsimony.DownPass(t, states, idx)
 	}
+
+	// for _, n := range t.Nodes() {
+	// 	if n.Tip() {
+	// 		continue
+	// 	}
+	// 	fmt.Println(states[n.Id()])
+	// }
 
 	switch preset {
 	case "civet":
@@ -269,15 +280,27 @@ func ash(treeIn string, alignmentFile string, variantsConfig string, genbankFile
 
 		// then get the ancestral node and print its sequence
 		commonAncNodeID, err := ancestry.MRCA(t, outgroup)
+		// _, err = ancestry.MRCA(t, outgroup)
 		if err != nil {
 			return err
 		}
+		// for _, tip := range t.Tips() {
+		// 	fmt.Print(tip.Name() + " ")
+		// 	fmt.Println(states[tip.Id()])
+		// }
+		// for i := range characterStates {
+		// 	fmt.Println(characterStates[i])
+		// }
+		// for i := range characterStates {
+		// 	fmt.Println(bitsets.GetSetBits(states[commonAncNodeID][i : i+1]))
+		// }
 		fmt.Println(">root")
 		IUPACMap := annotation.GetIUPACMap()
 		for i := range states[commonAncNodeID] {
 			setBits := bitsets.GetSetBits(states[commonAncNodeID][i : i+1])
 			nucstates := make([]string, 0)
 			for _, b := range setBits {
+				// fmt.Println(characterStates[i])
 				nucstates = append(nucstates, characterStates[i].StateKey[b-1])
 			}
 			sort.Strings(nucstates)
@@ -459,32 +482,32 @@ func init() {
 	mainCmd.Flags().Lookup("civet").NoOptDefVal = "true"
 	mainCmd.Flags().Lookup("nuc").NoOptDefVal = "true"
 	mainCmd.Flags().Lookup("paper").NoOptDefVal = "true"
-	mainCmd.Flags().Lookup("epistais").NoOptDefVal = "true"
+	mainCmd.Flags().Lookup("epistasis").NoOptDefVal = "true"
 	mainCmd.Flags().Lookup("common_anc").NoOptDefVal = "true"
 
 	mainCmd.Flags().SortFlags = false
 }
 
 func main() {
-	f, err := os.Create("CPU.prof")
-	if err != nil {
-		log.Fatal("could not create CPU profile: ", err)
-	}
-	defer f.Close() // error handling omitted for example
-	if err := pprof.StartCPUProfile(f); err != nil {
-		log.Fatal("could not start CPU profile: ", err)
-	}
-	defer pprof.StopCPUProfile()
+	// f, err := os.Create("CPU.prof")
+	// if err != nil {
+	// 	log.Fatal("could not create CPU profile: ", err)
+	// }
+	// defer f.Close() // error handling omitted for example
+	// if err := pprof.StartCPUProfile(f); err != nil {
+	// 	log.Fatal("could not start CPU profile: ", err)
+	// }
+	// defer pprof.StopCPUProfile()
 
 	mainCmd.Execute()
 
-	f2, err := os.Create("mem.prof")
-	if err != nil {
-		log.Fatal("could not create memory profile: ", err)
-	}
-	defer f2.Close() // error handling omitted for example
-	runtime.GC()     // get up-to-date statistics
-	if err := pprof.WriteHeapProfile(f2); err != nil {
-		log.Fatal("could not write memory profile: ", err)
-	}
+	// f2, err := os.Create("mem.prof")
+	// if err != nil {
+	// 	log.Fatal("could not create memory profile: ", err)
+	// }
+	// defer f2.Close() // error handling omitted for example
+	// runtime.GC()     // get up-to-date statistics
+	// if err := pprof.WriteHeapProfile(f2); err != nil {
+	// 	log.Fatal("could not write memory profile: ", err)
+	// }
 }
