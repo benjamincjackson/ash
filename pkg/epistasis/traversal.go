@@ -199,7 +199,7 @@ func labelEdgeAnno(upnode, downnode *tree.Node, edge *tree.Edge, regions []annot
 
 						// They are different. We label the edge with the AA change, we don't label any SNPs
 						case true:
-							label := "AA=" + region.Name + ":" + upAA + strconv.Itoa(AACounter) + downAA
+							label := "AA=" + region.Name + ":" + strconv.Itoa(AACounter) + ":" + upAA + downAA
 							edge.AddComment(label)
 
 						// They are the same. We label the edge with any nucleotide changes that there are,
