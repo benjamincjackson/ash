@@ -1,8 +1,13 @@
 package tree
 
-import fbitset "github.com/fredericlemoine/bitset"
+import (
+	"strings"
+
+	fbitset "github.com/fredericlemoine/bitset"
+)
 
 // Structure of an edge
+// TO DO - add fields to contain synonymous, nonsynonymous (deletion?) changes, etc
 type Edge struct {
 	left, right *Node    // Left and right nodes
 	length      float64  // length of branch
@@ -53,6 +58,23 @@ func (e *Edge) AddComment(comment string) {
 
 func (e *Edge) GetComments() []string {
 	return e.comment
+}
+
+// get the comments that start "AA="
+func (e *Edge) Get_AA_comments() []string {
+	comments := e.GetComments()
+	AAs := make([]string, 0)
+	for _, c := range comments {
+		info := strings.Split(c, ":")
+		// if it's not an amino acid, skip it
+		if strings.Split(info[0], "=")[0] != "AA" {
+			continue
+		}
+		name := strings.Join(info[0:2], ":")
+		AAs = append(AAs, name)
+	}
+
+	return AAs
 }
 
 // Sets the length of the branch

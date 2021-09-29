@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -162,7 +163,8 @@ func readTree(treeFile string) (*tree.Tree, error) {
 func ash(treeIn string, alignmentFile string, variantsConfig string, genbankFile string, tipFile string,
 	algorithmUp string, algorithmDown string, annotateNodes bool, annotateTips bool, threshold int,
 	treeOut string, childrenOut string,
-	summarize bool, civet bool, nuc bool, p bool, epi bool, common_anc bool, outgroup string) error {
+	summarize bool, civet bool, nuc bool, p bool, epi bool, common_anc bool, outgroup string, rescale bool,
+	threads int) error {
 
 	// algoUp, algoDown, input, err := checkArgs(treeIn, alignmentFile, variantsConfig, genbankFile, tipFile, algorithmUp, algorithmDown, treeOut)
 	algoUp, algoDown, input, preset, err := checkArgs(treeIn, alignmentFile, variantsConfig, genbankFile, tipFile, algorithmUp, algorithmDown, treeOut, civet, nuc, p, epi, common_anc)
@@ -268,6 +270,41 @@ func ash(treeIn string, alignmentFile string, variantsConfig string, genbankFile
 
 		parsimony.LabelChangesAnno(t, features, characterStates, states)
 
+		f, err := os.Create("branchlengths.tsv")
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		var tip string
+		f.WriteString("branch\tlength\tterminal\tnummuts\ttransitions\n")
+		for i, e := range t.Edges() {
+			if e.Right().Tip() {
+				tip = "true"
+			} else {
+				tip = "false"
+			}
+			f.WriteString(strconv.Itoa(i) + "\t" + strconv.FormatFloat(e.Length(), 'f', 8, 64) + "\t" + tip + "\t" + strconv.Itoa(len(e.GetComments())) + "\t" + strings.Join(e.GetComments(), " ") + "\n")
+		}
+
+		// rescale the tree for JT
+		if rescale {
+			for _, e := range t.Edges() {
+				e.SetLength(float64(len(e.GetComments())))
+			}
+		}
+
+		// write the treefile...
+		if len(treeOut) > 0 {
+			fout, err := os.Create(treeOut)
+			if err != nil {
+				return err
+			}
+			defer fout.Close()
+
+			// fout.WriteString(t.NewickOptionalComments(annotateNodes, annotateTips) + "\n")
+			fout.WriteString(t.NexusOptionalComments(annotateNodes, annotateTips))
+		}
+
 	case "common_anc":
 		// get the sequence at the node immediately ancestral to a set of samples
 		// first step is as for "nuc"
@@ -329,60 +366,60 @@ func ash(treeIn string, alignmentFile string, variantsConfig string, genbankFile
 		if err != nil {
 			return err
 		}
-		transitions := make([][]characterio.Transition, len(characterStates), len(characterStates))
-		for i := range transitions {
-			transitions[i] = make([]characterio.Transition, 0)
-		}
-		// label the changes
-		epistasis.LabelChangesAnno(t, features, characterStates, states)
-		// calculate the epistasis statistic
-		epistasis.Epistasis(t, features)
-	default:
-		// // we can keep all the transitions (structs containing pointers to the relevant nodes and edge) in an array
-		// // that matches the dimensions of the characters
 		// transitions := make([][]characterio.Transition, len(characterStates), len(characterStates))
 		// for i := range transitions {
 		// 	transitions[i] = make([]characterio.Transition, 0)
 		// }
-
-		// // to do- switch on whether we need to label the transitions or not
-		// parsimony.LabelChanges(t, characterStates, states, idx, transitions)
-
-		// // if we do, we should sort them
-		// for k := range transitions {
-		// 	sort.SliceStable(transitions[k], func(i, j int) bool {
-		// 		return transitions[k][i].Label < transitions[k][j].Label
-		// 	})
-		// }
-
-		// if annotateNodes {
-		// 	parsimony.LabelNodes(t, characterStates, states, idx)
-		// }
-
-		// if summarize {
-		// 	// TO DO: swap between stdout + a hard file
-		// 	fTrans := os.Stdout
-		// 	var lines []string
-		// 	for i := range transitions {
-		// 		lines = characterio.SummarizeTransitions(threshold, transitions[i], states, idx[i], characterStates[i])
-		// 		for _, l := range lines {
-		// 			fTrans.WriteString(l + "\n")
-		// 		}
-		// 	}
-		// }
-	}
-
-	// write the treefile...
-	if len(treeOut) > 0 {
-		fout, err := os.Create(treeOut)
-		if err != nil {
-			return err
+		// label the changes
+		epistasis.LabelChangesAnno(t, features, characterStates, states)
+		// calculate the epistasis statistic
+		epistasis.Epistasis(t, features, threads)
+	default:
+		// we can keep all the transitions (structs containing pointers to the relevant nodes and edge) in an array
+		// that matches the dimensions of the characters
+		transitions := make([][]characterio.Transition, len(characterStates), len(characterStates))
+		for i := range transitions {
+			transitions[i] = make([]characterio.Transition, 0)
 		}
-		defer fout.Close()
 
-		// fout.WriteString(t.NewickOptionalComments(annotateNodes, annotateTips) + "\n")
-		fout.WriteString(t.NexusOptionalComments(annotateNodes, annotateTips))
+		// to do- switch on whether we need to label the transitions or not
+		parsimony.LabelChanges(t, characterStates, states, idx, transitions)
+
+		// if we do, we should sort them
+		for k := range transitions {
+			sort.SliceStable(transitions[k], func(i, j int) bool {
+				return transitions[k][i].Label < transitions[k][j].Label
+			})
+		}
+
+		if annotateNodes {
+			parsimony.LabelNodes(t, characterStates, states, idx)
+		}
+
+		if summarize {
+			// TO DO: swap between stdout + a hard file
+			fTrans := os.Stdout
+			var lines []string
+			for i := range transitions {
+				lines = characterio.SummarizeTransitions(threshold, transitions[i], states, idx[i], characterStates[i])
+				for _, l := range lines {
+					fTrans.WriteString(l + "\n")
+				}
+			}
+		}
 	}
+
+	// // write the treefile...
+	// if len(treeOut) > 0 {
+	// 	fout, err := os.Create(treeOut)
+	// 	if err != nil {
+	// 		return err
+	// 	}
+	// 	defer fout.Close()
+
+	// 	// fout.WriteString(t.NewickOptionalComments(annotateNodes, annotateTips) + "\n")
+	// 	fout.WriteString(t.NexusOptionalComments(annotateNodes, annotateTips))
+	// }
 
 	// f, err := os.Create("branchlengths.tsv")
 	// if err != nil {
@@ -434,6 +471,8 @@ var p bool
 var common_anc bool
 var epi bool
 var outgroup string
+var rescale bool
+var threads int
 
 var mainCmd = &cobra.Command{
 	Use:   "ash",
@@ -448,7 +487,8 @@ Example usage:
 
 		err = ash(treeFile, alignmentFile, variantsConfig, genbankFile, tipFile,
 			algorithmUp, algorithmDown, annotateNodes, annotateTips, threshold,
-			treeOut, childrenOut, summarize, civet, nuc, p, epi, common_anc, outgroup)
+			treeOut, childrenOut, summarize, civet, nuc, p, epi, common_anc, outgroup, rescale,
+			threads)
 
 		return
 	},
@@ -475,6 +515,8 @@ func init() {
 	mainCmd.Flags().BoolVarP(&epi, "epistasis", "", false, "do epistasis things")
 	mainCmd.Flags().BoolVarP(&common_anc, "common_anc", "", false, "do common_anc things")
 	mainCmd.Flags().StringVarP(&outgroup, "outgroup", "", "", "the outgroup")
+	mainCmd.Flags().BoolVarP(&rescale, "rescale", "", false, "rescale --tree-out so branch lengths are inferred # nuc substitutions")
+	mainCmd.Flags().IntVarP(&threads, "threads", "t", 1, "number of threads to use for epistasis")
 
 	mainCmd.Flags().Lookup("annotate-nodes").NoOptDefVal = "true"
 	mainCmd.Flags().Lookup("annotate-tips").NoOptDefVal = "true"
@@ -484,6 +526,7 @@ func init() {
 	mainCmd.Flags().Lookup("paper").NoOptDefVal = "true"
 	mainCmd.Flags().Lookup("epistasis").NoOptDefVal = "true"
 	mainCmd.Flags().Lookup("common_anc").NoOptDefVal = "true"
+	mainCmd.Flags().Lookup("rescale").NoOptDefVal = "true"
 
 	mainCmd.Flags().SortFlags = false
 }
