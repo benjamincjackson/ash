@@ -60,8 +60,9 @@ func (e *Edge) GetComments() []string {
 	return e.comment
 }
 
-// get the comments that start "AA="
-func (e *Edge) Get_AA_comments() []string {
+// get the AAs that are commented on this branch (gene + residue, NOT the alleles)
+// the labels look like this: label := "AA=" + region.Name + ":" + strconv.Itoa(AACounter) + ":" + upAA + downAA
+func (e *Edge) Get_AA_residues() []string {
 	comments := e.GetComments()
 	AAs := make([]string, 0)
 	for _, c := range comments {
@@ -70,6 +71,7 @@ func (e *Edge) Get_AA_comments() []string {
 		if strings.Split(info[0], "=")[0] != "AA" {
 			continue
 		}
+		// name is just gene + residue, we don't care about the alleles
 		name := strings.Join(info[0:2], ":")
 		AAs = append(AAs, name)
 	}

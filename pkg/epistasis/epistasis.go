@@ -18,19 +18,30 @@ import (
 
 // a struct containing info about one pair's consecutive mutations over the tree
 type Pair struct {
-	i     string    // the name of the first site
-	j     string    // the name of the second site
-	m_ij  int       // number of branches with changes at BOTH sites i and j on
-	t_pi  []float64 // list of synonymous distances between pairs of nonsynonymous changes at sites i and j
+	i     string                     // the name of the first site
+	j     string                     // the name of the second site
+	m_ij  int                        // number of branches with changes at BOTH sites i and j on
+	t_pi  [][]float64                // list of synonymous distances between pairs of nonsynonymous changes at sites i and j, one slice for each possible order
+	order []map[*tree.Edge][2]string // what is the order of the temporally unresolved mutations in this permutation
 	E_tau float64
+	// mu    sync.Mutex // multiple goroutines may want to modify the values in this struct, so we will lock it when they do
 }
 
 func (p *Pair) add_m_ij() {
+	// p.mu.Lock()
 	p.m_ij++
+	// p.mu.Unlock()
 }
 
-func (p *Pair) append_t_pi(i float64) {
-	p.t_pi = append(p.t_pi, i)
+func (p *Pair) set_m_ij(m_ij int) {
+	p.m_ij = m_ij
+}
+
+// n is the nth possible order, i is a value of t_pi
+func (p *Pair) append_t_pi(n int, i float64) {
+	// p.mu.Lock()
+	p.t_pi[n] = append(p.t_pi[n], i)
+	// p.mu.Unlock()
 }
 
 func (p *Pair) get_i() string {
@@ -41,36 +52,122 @@ func (p *Pair) get_j() string {
 	return p.j
 }
 
-// func (p *Pair) get_t_pi() []float64 {
-// 	return p.t_pi
-// }
+// n is the nth possible order
+func (p *Pair) get_order(n int) map[*tree.Edge][2]string {
+	return p.order[n]
+}
 
-// func get_aa_pairs(features []annotation.Region) []Pair {
-// 	justCDS := make([]annotation.Region, 0)
-// 	for i := range features {
-// 		if features[i].Whichtype == "CDS" {
-// 			justCDS = append(justCDS, features[i])
-// 		}
-// 	}
+// 1 << m_ij is the same as 2^^m_ij
+func (p *Pair) set_order_length(m_ij int) {
+	if m_ij > 0 {
+		p.order = make([]map[*tree.Edge][2]string, 1<<m_ij, 1<<m_ij)
+		for i := 0; i < 1<<m_ij; i++ {
+			p.order[i] = make(map[*tree.Edge][2]string)
+		}
+	}
+}
 
-// 	pairs := make([]Pair, 0)
-// 	for _, cds1 := range justCDS {
-// 		for _, cds2 := range justCDS {
-// 			for i := range cds1.Codonstarts {
-// 				for j := range cds2.Codonstarts {
-// 					// not with itself:
-// 					if i == j {
-// 						continue
-// 					}
-// 					// otherwise:
-// 					pairs = append(pairs, Pair{i: cds1.Name + ":" + strconv.Itoa(i+1), j: cds2.Name + ":" + strconv.Itoa(i+1)})
-// 				}
-// 			}
-// 		}
-// 	}
+func (p *Pair) set_order(n int, m map[*tree.Edge][2]string) {
+	p.order[n] = m
+}
 
-// 	return pairs
-// }
+func (p *Pair) initialise_t_ij_slice(m_ij int) {
+	p.t_pi = make([][]float64, 1<<m_ij)
+	for i := 0; i < 1<<m_ij; i++ {
+		p.t_pi[i] = make([]float64, 0)
+	}
+}
+
+/*
+modified from: https://github.com/mxschmitt/golang-combinations/blob/master/combinations.go
+
+MIT License
+
+Copyright (c) 2018 Max Schmitt
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+*/
+func orders(n int) (subsets [][]int) {
+	if n == 0 {
+		return make([][]int, 0)
+	}
+	length := uint(n)
+
+	for subsetBits := 0; subsetBits < (1 << length); subsetBits++ {
+		subset := make([]int, n)
+
+		for object := uint(0); object < length; object++ {
+			// checks if object is contained in subset
+			// by checking if bit 'object' is set in subsetBits
+			if (subsetBits>>object)&1 == 1 {
+				// add object to subset
+				subset[object] = 1
+			}
+		}
+		// add subset to subsets
+		subsets = append(subsets, subset)
+	}
+	return subsets
+}
+
+func get_set_temporally_unresolved(t *tree.Tree, p *Pair) {
+	var i_present bool
+	var j_present bool
+	var site string
+
+	i := p.get_i()
+	j := p.get_j()
+
+	m_ij := 0
+
+	unresolved := make([]*tree.Edge, 0)
+
+	for _, e := range t.Edges() {
+		i_present = false
+		j_present = false
+		for _, comment := range e.GetComments() {
+			if strings.HasPrefix(comment, "syn=") {
+				continue
+			}
+			site = strings.Join(strings.Split(comment, ":")[0:2], ":")
+			if site == i {
+				i_present = true
+			}
+			if site == j {
+				j_present = true
+			}
+			if i_present && j_present {
+				m_ij++
+				unresolved = append(unresolved, e)
+				break
+			}
+		}
+	}
+
+	p.set_m_ij(m_ij)
+	p.set_order_length(m_ij)
+	p.initialise_t_ij_slice(m_ij)
+
+	os := orders(m_ij)
+	for n := range os {
+		om := make(map[*tree.Edge][2]string)
+		for m := range unresolved {
+			switch os[n][m] {
+			case 0:
+				om[unresolved[m]] = [2]string{i, j}
+			case 1:
+				om[unresolved[m]] = [2]string{j, i}
+			}
+
+		}
+		p.set_order(n, om)
+	}
+}
 
 // following Kryazhimskiy, Sergey, et al. "Prevalence of epistasis in the evolution of influenza A surface proteins." PLoS genetics 7.2 (2011): e1001301,
 // get the mean synonymous distance between randomly chosen pairs of nonsynonymous substitutions from the tree
@@ -124,7 +221,7 @@ func tau_recur(prevEdge *tree.Edge, curNode *tree.Node, tns *Tns) {
 		}
 
 		// first, if there are no non-synonymous mutations on this branch, we can skip the next two steps
-		AAs := e.Get_AA_comments()
+		AAs := e.Get_AA_residues()
 		switch {
 		// if there is 1, we set the synonymous distance and collect the downstream muts starting from here:
 		case len(AAs) == 1:
@@ -169,7 +266,7 @@ func collect_distances(prevEdge *tree.Edge, curNode *tree.Node, tns *Tns, n int,
 			continue
 		}
 
-		AAs := e.Get_AA_comments()
+		AAs := e.Get_AA_residues()
 		if len(AAs) > 0 {
 			tns.add_distance(float64(n) * float64(len(AAs)) * (synDist + (e.SynLen / 2)))
 			tns.add_weight(n * len(AAs))
@@ -187,13 +284,15 @@ func collect_distances(prevEdge *tree.Edge, curNode *tree.Node, tns *Tns, n int,
 // Make the pairs
 func get_pairs_from_tree(t *tree.Tree) []Pair {
 
+	// m is just a map from residue
 	m := make(map[string]int)
 	for _, e := range t.Edges() {
 		// skip external branches
 		if e.Right().Tip() {
 			continue
 		}
-		AAs := e.Get_AA_comments()
+		// AAs
+		AAs := e.Get_AA_residues()
 		for _, AA := range AAs {
 			if _, ok := m[AA]; ok {
 				m[AA]++
@@ -203,9 +302,10 @@ func get_pairs_from_tree(t *tree.Tree) []Pair {
 		}
 	}
 
+	// here we only keep residues where mutations occur at least once on the tree (follows original paper)
 	tokeep := make([]string, 0)
 	for key, value := range m {
-		if value > 1 {
+		if value >= 1 {
 			tokeep = append(tokeep, key)
 		}
 	}
@@ -217,7 +317,10 @@ func get_pairs_from_tree(t *tree.Tree) []Pair {
 		for j := i + 1; j < len(tokeep); j++ {
 			aa1 := tokeep[i]
 			aa2 := tokeep[j]
+			// the original paper defined the pairs as ordered, so i -> j is a different proposition to j -> i.
+			// hence, we have a separate struct for each order
 			pairs = append(pairs, Pair{i: aa1, j: aa2})
+			pairs = append(pairs, Pair{i: aa2, j: aa1})
 		}
 	}
 
@@ -245,9 +348,8 @@ func Epistasis(t *tree.Tree, features []annotation.Region, threads int) {
 
 	chunkSize := int(math.Floor(float64(len(pairs)) / float64(threads)))
 
-	var wgPairs sync.WaitGroup
-	wgPairs.Add(threads)
-
+	var wgPairTemporal sync.WaitGroup
+	wgPairTemporal.Add(threads)
 	for i := 0; i < threads; i++ {
 		start := i * chunkSize
 		end := start + chunkSize
@@ -255,18 +357,57 @@ func Epistasis(t *tree.Tree, features []annotation.Region, threads int) {
 			end = len(pairs)
 		}
 		go func() {
-			processChunk(t, pairs[start:end])
-			wgPairs.Done()
+			processChunktemporal(t, pairs[start:end])
+			wgPairTemporal.Done()
 		}()
 	}
+	wgPairTemporal.Wait()
 
-	wgPairs.Wait()
+	counter := 0
+	m := make(map[int]int)
+	for i := range pairs {
+		if pairs[i].m_ij > 0 {
+			counter++
+			if _, ok := m[pairs[i].m_ij]; ok {
+				m[pairs[i].m_ij]++
+			} else {
+				m[pairs[i].m_ij] = 1
+			}
+			// fmt.Println(pairs[i].order)
+		}
+	}
+
+	// fmt.Print("total number of pairs is: ")
+	// fmt.Println(len(pairs))
+	// fmt.Println()
+
+	// fmt.Print("number of temporally unresolved pairs is: ")
+	// fmt.Println(counter)
+	// fmt.Println()
+
+	// fmt.Print("distribution of m_ijs is: ")
+	// fmt.Println(m)
+	// fmt.Println()
+
+	// os.Exit(0)
+
+	var wgPairsij sync.WaitGroup
+	wgPairsij.Add(threads)
+	for i := 0; i < threads; i++ {
+		start := i * chunkSize
+		end := start + chunkSize
+		if i == threads-1 {
+			end = len(pairs)
+		}
+		go func() {
+			processChunkij(t, pairs[start:end])
+			wgPairsij.Done()
+		}()
+	}
+	wgPairsij.Wait()
 
 	for i := range pairs {
-		pairs[i].E_tau = calc_E_tau(pairs[i], tau)
-		// fmt.Println(calc_E_tau(pair, tau))
-		// fmt.Println(pair.E_tau)
-		// fmt.Println()
+		pairs[i].E_tau = calc_E_tau(&(pairs[i]), tau)
 	}
 
 	sort.SliceStable(pairs, func(i, j int) bool {
@@ -280,22 +421,33 @@ func Epistasis(t *tree.Tree, features []annotation.Region, threads int) {
 	// fmt.Println(pairs[72])
 }
 
-func processChunk(t *tree.Tree, pairs []Pair) {
+func processChunktemporal(t *tree.Tree, pairs []Pair) {
+	for i := range pairs {
+		get_set_temporally_unresolved(t, &(pairs[i]))
+	}
+}
+
+func processChunkij(t *tree.Tree, pairs []Pair) {
 	for i := range pairs {
 		ij(t, &(pairs[i]))
 	}
-
-	return
 }
 
 // {AA=orf1ab:4387 AA=orf1ab:6485 0 []}
 
 func ij(t *tree.Tree, p *Pair) {
-	ij_recur(nil, t.Root(), p, [2]bool{false, false}, 0.0)
+	switch p.m_ij {
+	case 0:
+		ij_recur(nil, t.Root(), p, false, 0.0)
+	default:
+		for i := range p.order {
+			ij_recur_unresolved(nil, t.Root(), p, i, false, 0.0)
+		}
+	}
 	// fmt.Println(*p)
 }
 
-func ij_recur(prevEdge *tree.Edge, curNode *tree.Node, pair *Pair, open [2]bool, synDist float64) {
+func ij_recur(prevEdge *tree.Edge, curNode *tree.Node, pair *Pair, open bool, synDist float64) {
 
 	// base state: if we have reached a tip, we don't want to do anything (per the original paper -
 	// mutations on external edges are discounted)
@@ -303,7 +455,10 @@ func ij_recur(prevEdge *tree.Edge, curNode *tree.Node, pair *Pair, open [2]bool,
 		return
 	}
 
-	for i, e := range curNode.Edges() {
+	i := pair.get_i()
+	j := pair.get_j()
+
+	for k, e := range curNode.Edges() {
 
 		// skip the rootward edge
 		if e == prevEdge {
@@ -323,173 +478,165 @@ func ij_recur(prevEdge *tree.Edge, curNode *tree.Node, pair *Pair, open [2]bool,
 				continue
 			}
 			site = strings.Join(strings.Split(comment, ":")[0:2], ":")
-			if site == pair.get_i() {
+			if site == i {
 				i_present = true
 			}
-			if site == pair.get_j() {
+			if site == j {
 				j_present = true
 			}
 		}
 
+		if i_present && j_present {
+			panic("i and j both present but this is the function for temporally resolved pairs")
+		}
+
+		// d is the synonymous distance that will be passed to the next call of the function.
+		// it will be reset if there are any relevant nonsynonymous mutations on this branch,
+		// or it will be the current accrued synonymous distance + the edge synonymous distance
+		// if there aren't.
 		var d float64
-		o := open
-		// if this branch has a relevant mutation:
-		if i_present || j_present {
 
-			// then do the appropriate thing...
-			switch whatToDo(open, i_present, j_present) {
-			case -2:
-				panic("got a -2 from whatToDo()")
-			case -1: // i is not open, j is not open, but one or both are present here (for the first time ever in this tree)
-				// set synonymous distance to half this branch's length,
-				// update open appropriately
-				d = float64(edgeSynDist) / 2
-				o = [2]bool{i_present, j_present}
-			case 0: // i is open, j is not open, i is present, j is not | 1010
-				// reset synonymous distance to half this branch's length,
-				// update open
-				d = float64(edgeSynDist) / 2
-				o = [2]bool{true, false}
-			case 1: // i is not open, j is open, i is not present, j is present | 0101
-				// reset synonymous distance to half this branch's length
-				// update open
-				d = float64(edgeSynDist) / 2
-				o = [2]bool{false, true}
-			case 2: // i is open, j is not open, i is not present, j is present | 1001
-				// record an i_j pair, reset synonymous distance to half this branch's length
-				// update open
-				d = float64(edgeSynDist) / 2
-				pair.append_t_pi(synDist + d)
-				o = [2]bool{false, true}
-			case 3: // i is not open, j is open, i is present, j is not present | 0110
-				// record a j_i pair, reset synonymous distance to half this branch's length
-				// update open
-				d = float64(edgeSynDist) / 2
-				pair.append_t_pi(synDist + d)
-				o = [2]bool{true, false}
-			case 4: // i is open, j is not open, i is present, j is present | 1011
-				// record two i_j pairs one with a long and one with a short distance, record a j_i pair with short distance
-				// add a count to m_ij
-				// reset synonymous distance to half this branch's length
-				// update open
-				d = float64(edgeSynDist) / 2
-				pair.append_t_pi(synDist + d)
-				pair.append_t_pi(float64(edgeSynDist) / 3)
-				pair.append_t_pi(float64(edgeSynDist) / 3)
-				pair.add_m_ij()
-				o = [2]bool{true, true}
-			case 5: // i is not open, j is open, i is present, j is present | 0111
-				// record two j_i pairs one with a long and one with a short distance, record an i_j pair with short distance
-				// add a count to m_ij
-				// reset synonymous distance to half this branch's length
-				d = float64(edgeSynDist) / 2
-				pair.append_t_pi(synDist + d)
-				pair.append_t_pi(float64(edgeSynDist) / 3)
-				pair.append_t_pi(float64(edgeSynDist) / 3)
-				pair.add_m_ij()
-				o = [2]bool{true, true}
-			case 6: // i is open, j is open, i is present, j is not present | 1110
-				// record a j_i pair, reset synonymous distance to half this branch's length
-				// update open
-				d = float64(edgeSynDist) / 2
-				pair.append_t_pi(synDist + d)
-				o = [2]bool{true, false}
-			case 7: // i is open, j is open, i is not present, j is present | 1101
-				// record an i_j pair, reset synonymous distance to half this branch's length
-				// update open
-				d = float64(edgeSynDist) / 2
-				pair.append_t_pi(synDist + d)
-				o = [2]bool{false, true}
-			case 8: // i is open, j is open, i is present, j is present | 1111
-				// record two (short and long) i_j pairs, record two (short and long) j_i pairs
-				// add a count to m_ij
-				// reset synonymous distance to half this branch's length
-				// update open
-				d = float64(edgeSynDist) / 2
-				pair.append_t_pi(synDist + d)
-				pair.append_t_pi(synDist + d)
-				pair.append_t_pi(float64(edgeSynDist) / 3)
-				pair.append_t_pi(float64(edgeSynDist) / 3)
-				pair.add_m_ij()
-				o = [2]bool{true, true}
-			}
+		// o is a boolean array of length 2, [i is present (last) on the parent branch, j is present (last) on the parent branch]
+		var o bool
 
-		} else { // otherwise, we just increment the synonymous distance and retain what's open:
+		// we switch on whether there is an ancestral mutation at site i, and whether there are mutations on this branch at sites i or j
+		switch {
+		case !open && !i_present && !j_present: // 000
+			o = false
+		case !open && !i_present && j_present: // 001
+			o = false
+		case !open && i_present && !j_present: // 010
+			o = true
+			d = float64(edgeSynDist) / 2
+		case open && !i_present && !j_present: // 100
+			o = true
 			d = synDist + float64(edgeSynDist)
-			o = open
+		case open && !i_present && j_present: // 101
+			pair.append_t_pi(0, synDist+(float64(edgeSynDist)/2))
+			o = false
+			d = 0.0
+		case open && i_present && !j_present: // 110
+			o = true
+			d = float64(edgeSynDist) / 2
 		}
 
 		// func ij_recur(prevEdge *tree.Edge, curNode *tree.Node, pair *Pair, open [2]bool, synDist float64) {
 		// then we carry on recurring down the tree
-		ij_recur(e, curNode.Neigh()[i], pair, o, d)
+		ij_recur(e, curNode.Neigh()[k], pair, o, d)
 	}
 }
 
-func whatToDo(open [2]bool, i_present, j_present bool) int {
-	// nothing has occurred yet (e.g. at the root):
-	if !open[0] && !open[1] {
-		return -1
-	}
-	// i is open, j is not, i is present, j is not
-	if open[0] && !open[1] && i_present && !j_present {
-		return 0
-	}
-	// i is not open, j is open, i is not present, j is present
-	if !open[0] && open[1] && !i_present && j_present {
-		return 1
-	}
-	// i is open, j is not open, i is not present, j is present
-	if open[0] && !open[1] && !i_present && j_present {
-		return 2
-	}
-	// i is not open, j is open, i is present, j is not present
-	if !open[0] && open[1] && i_present && !j_present {
-		return 3
-	}
-	// i is open, j is not open, i is present, j is present
-	if open[0] && !open[1] && i_present && j_present {
-		return 4
-	}
-	// i is not open, j is open, i is present, j is present
-	if !open[0] && open[1] && i_present && j_present {
-		return 5
-	}
-	// i is open, j is open, i is present, j is not present
-	if open[0] && open[1] && i_present && !j_present {
-		return 6
-	}
-	// i is open, j is open, i is not present, j is present
-	if open[0] && open[1] && !i_present && j_present {
-		return 7
-	}
-	// i is open, j is open, i is present, j is present
-	if open[0] && open[1] && i_present && j_present {
-		return 8
+func ij_recur_unresolved(prevEdge *tree.Edge, curNode *tree.Node, pair *Pair, order int, open bool, synDist float64) {
+
+	// base state: if we have reached a tip, we don't want to do anything (per the original paper -
+	// mutations on external edges are discounted)
+	if curNode.Tip() {
+		return
 	}
 
-	return -2
+	i := pair.get_i()
+	j := pair.get_j()
+
+	for k, e := range curNode.Edges() {
+
+		// skip the rootward edge
+		if e == prevEdge {
+			continue
+		}
+
+		// here is the predefined synonymous length of this branch:
+		edgeSynDist := e.SynLen
+
+		// check to see if there are any relevant changes on this branch
+		// TO DO - move this to its own function?
+		i_present := false
+		j_present := false
+		var site string
+		for _, comment := range e.GetComments() {
+			if strings.HasPrefix(comment, "syn=") {
+				continue
+			}
+			site = strings.Join(strings.Split(comment, ":")[0:2], ":")
+			if site == i {
+				i_present = true
+			}
+			if site == j {
+				j_present = true
+			}
+		}
+
+		// d is the synonymous distance that will be passed to the next call of the function.
+		// it will be reset if there are any relevant nonsynonymous mutations on this branch,
+		// or it will be the current accrued synonymous distance + the edge synonymous distance
+		// if there aren't.
+		var d float64
+
+		// o is a boolean array of length 2, [i is present (last) on the parent branch, j is present (last) on the parent branch]
+		var o bool
+
+		// we switch on whether there is an ancestral mutation at site i, and whether there are mutations on this branch at sites i or j for this order
+		switch {
+		case !open && !i_present && !j_present: // 000
+			o = false
+		case !open && !i_present && j_present: // 001
+			o = false
+		case !open && i_present && !j_present: // 010
+			o = true
+			d = float64(edgeSynDist) / 2
+		case open && !i_present && !j_present: // 100
+			o = true
+			d = synDist + float64(edgeSynDist)
+		case open && !i_present && j_present: // 101
+			pair.append_t_pi(order, synDist+(float64(edgeSynDist)/2))
+			o = false
+			d = 0.0
+		case open && i_present && !j_present: // 110
+			o = true
+			d = float64(edgeSynDist) / 2
+
+		case !open && i_present && j_present: // 011
+
+			first := pair.get_order(order)[e][0]
+			// second := pair.get_order(order)[e][0]
+
+			if first == i { // xij
+				pair.append_t_pi(order, (float64(edgeSynDist) / 3))
+				o = false
+				d = 0.0
+			} else { // xji
+				o = true
+				d = float64(edgeSynDist) / 3
+			}
+		case open && i_present && j_present: // 111
+
+			first := pair.get_order(order)[e][0]
+			// second := pair.get_order(order)[e][0]
+
+			if first == i { // iij
+				pair.append_t_pi(order, (float64(edgeSynDist) / 3))
+				o = false
+				d = 0.0
+			} else { // iji
+				pair.append_t_pi(order, synDist+(float64(edgeSynDist)/3))
+				o = true
+				d = float64(edgeSynDist) / 3
+			}
+		}
+
+		// func ij_recur(prevEdge *tree.Edge, curNode *tree.Node, pair *Pair, open [2]bool, synDist float64) {
+		// then we carry on recurring down the tree
+		ij_recur_unresolved(e, curNode.Neigh()[k], pair, order, o, d)
+	}
 }
 
-// NB: don't do it this way - just take the mean of p.t_pi by dividing its sum by its length
 // see equation (1) in Kryazhimskiy, Sergey, et al. "Prevalence of epistasis in the evolution of influenza A surface proteins." PLoS genetics 7.2 (2011): e1001301.
-// func calc_E_tau(p Pair, tau float64) float64 {
-// 	d := 1 / math.Pow(2, float64(p.m_ij))
-// 	sum := 0.0
-// 	for i := range p.t_pi {
-// 		sum += math.Exp((p.t_pi[i] * -1) / tau)
-// 	}
-// 	E_tau := sum / d
-// 	return E_tau
-// }
-
-func calc_E_tau(p Pair, tau float64) float64 {
-	d := len(p.t_pi)
-	if d == 0 {
-		return 0.0
-	}
+func calc_E_tau(p *Pair, tau float64) float64 {
+	d := 1 << p.m_ij
 	sum := 0.0
 	for i := range p.t_pi {
-		sum += math.Exp((p.t_pi[i] * -1) / tau)
+		for j := range p.t_pi[i] {
+			sum += math.Exp((p.t_pi[i][j] * -1) / tau)
+		}
 	}
 	E_tau := sum / float64(d)
 	return E_tau
