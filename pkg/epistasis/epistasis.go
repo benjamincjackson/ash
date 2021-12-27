@@ -13,8 +13,12 @@ import (
 	"github.com/benjamincjackson/ash/pkg/tree"
 )
 
-// type Pair struct {
-// }
+// a reduced-size struct which just the result for one pair in it
+type Result struct {
+	i     string
+	j     string
+	E_tau float64
+}
 
 // a struct containing info about one pair's consecutive mutations over the tree
 type Pair struct {
@@ -24,13 +28,10 @@ type Pair struct {
 	t_pi  [][]float64                // list of synonymous distances between pairs of nonsynonymous changes at sites i and j, one slice for each possible order
 	order []map[*tree.Edge][2]string // what is the order of the temporally unresolved mutations in this permutation
 	E_tau float64
-	// mu    sync.Mutex // multiple goroutines may want to modify the values in this struct, so we will lock it when they do
 }
 
 func (p *Pair) add_m_ij() {
-	// p.mu.Lock()
 	p.m_ij++
-	// p.mu.Unlock()
 }
 
 func (p *Pair) set_m_ij(m_ij int) {
@@ -39,9 +40,7 @@ func (p *Pair) set_m_ij(m_ij int) {
 
 // n is the nth possible order, i is a value of t_pi
 func (p *Pair) append_t_pi(n int, i float64) {
-	// p.mu.Lock()
 	p.t_pi[n] = append(p.t_pi[n], i)
-	// p.mu.Unlock()
 }
 
 func (p *Pair) get_i() string {
@@ -77,6 +76,195 @@ func (p *Pair) initialise_t_ij_slice(m_ij int) {
 		p.t_pi[i] = make([]float64, 0)
 	}
 }
+
+// the tree's branches are labelled with "syn=" for non-protein-changing nucleotide changes,
+// and "AA=" for amino acid changes
+// edge.SynLen is also set to the inferred synonymous branch length
+func Epistasis(t *tree.Tree, features []annotation.Region, threads int) {
+	// the mean synonymous distance between non-synonymous pairs:
+	tau := get_tau(t)
+	fmt.Println("tau is: " + strconv.FormatFloat(tau, 'f', 8, 64))
+	fmt.Println()
+
+	aas_to_keep := get_aas_to_keep(t)
+	// fmt.Println(len(aas_to_keep))
+	// os.Exit(0)
+
+	runtime.GOMAXPROCS(threads)
+
+	cPair := make(chan Pair, threads)
+	cResults := make(chan Result, threads)
+	cResultsAgg := make(chan []Result)
+
+	go func() {
+		for i := range aas_to_keep {
+			for j := i + 1; j < len(aas_to_keep); j++ {
+				aa1 := aas_to_keep[i]
+				aa2 := aas_to_keep[j]
+				// the original paper defined the pairs as ordered, so i -> j is a different proposition to j -> i.
+				// hence, we have a separate struct for each order
+				cPair <- Pair{i: aa1, j: aa2}
+				cPair <- Pair{i: aa2, j: aa1}
+			}
+		}
+
+		close(cPair)
+	}()
+
+	var wgPairs sync.WaitGroup
+	wgPairs.Add(threads)
+
+	for n := 0; n < threads; n++ {
+		go func() {
+			process_pairs(cPair, cResults, t, tau)
+			wgPairs.Done()
+		}()
+	}
+
+	go aggregateResults(cResults, cResultsAgg)
+
+	wgPairs.Wait()
+	close(cResults)
+
+	results := <-cResultsAgg
+
+	sort.SliceStable(results, func(i, j int) bool {
+		return results[i].E_tau > results[j].E_tau
+	})
+
+	for i := range results {
+		fmt.Println(results[i])
+	}
+}
+
+// following Kryazhimskiy, Sergey, et al. "Prevalence of epistasis in the evolution of influenza A surface proteins." PLoS genetics 7.2 (2011): e1001301,
+// get the mean synonymous distance between randomly chosen pairs of nonsynonymous substitutions from the tree
+func get_tau(t *tree.Tree) float64 {
+	tns := Tns{}
+
+	tau_recur(nil, t.Root(), &tns)
+
+	sum_distances := 0.0
+	for i := range tns.distances {
+		sum_distances += tns.distances[i]
+	}
+
+	sum_weights := 0
+	for i := range tns.weights {
+		sum_weights += tns.weights[i]
+	}
+
+	tau := sum_distances / float64(sum_weights)
+
+	return tau
+}
+
+// traverse the tree, and return a list of residues where changes occur at least once
+func get_aas_to_keep(t *tree.Tree) []string {
+	// m is just a map from residue to counts of it
+	m := make(map[string]int)
+	for _, e := range t.Edges() {
+		// skip external branches
+		if e.Right().Tip() {
+			continue
+		}
+		// AAs
+		AAs := e.Get_AA_residues()
+		for _, AA := range AAs {
+			if _, ok := m[AA]; ok {
+				m[AA]++
+			} else {
+				m[AA] = 1
+			}
+		}
+	}
+
+	// here we only keep residues where mutations occur at least once on the tree (follows original paper)
+	tokeep := make([]string, 0)
+	for residue, count := range m {
+		if count >= 1 {
+			tokeep = append(tokeep, residue)
+		}
+	}
+
+	return tokeep
+}
+
+func process_pairs(cPairIn chan Pair, cPairOut chan Result, t *tree.Tree, tau float64) {
+
+	for p := range cPairIn {
+		cPairOut <- process_one_pair(p, t, tau)
+	}
+
+}
+
+func process_one_pair(p Pair, t *tree.Tree, tau float64) Result {
+
+	get_set_temporally_unresolved(t, &p)
+	ij(t, &p)
+	p.E_tau = calc_E_tau(&p, tau)
+
+	return Result{i: p.i, j: p.j, E_tau: p.E_tau}
+}
+
+func aggregateResults(cResultsIn chan Result, cResultsOut chan []Result) {
+
+	results := make([]Result, 0)
+
+	for r := range cResultsIn {
+		results = append(results, r)
+	}
+
+	cResultsOut <- results
+}
+
+// // Traverse the tree, storing the information about the changes present on branches.
+// // Filter the changes based on some criteria (not external branches, >= 1 occurence).
+// // Make the pairs
+// func get_pairs_from_tree(t *tree.Tree) []Pair {
+
+// 	// m is just a map from residue to counts of it
+// 	m := make(map[string]int)
+// 	for _, e := range t.Edges() {
+// 		// skip external branches
+// 		if e.Right().Tip() {
+// 			continue
+// 		}
+// 		// AAs
+// 		AAs := e.Get_AA_residues()
+// 		for _, AA := range AAs {
+// 			if _, ok := m[AA]; ok {
+// 				m[AA]++
+// 			} else {
+// 				m[AA] = 1
+// 			}
+// 		}
+// 	}
+
+// 	// here we only keep residues where mutations occur at least once on the tree (follows original paper)
+// 	tokeep := make([]string, 0)
+// 	for key, value := range m {
+// 		if value >= 1 {
+// 			tokeep = append(tokeep, key)
+// 		}
+// 	}
+
+// 	sort.Strings(tokeep)
+
+// 	pairs := make([]Pair, 0)
+// 	for i := range tokeep {
+// 		for j := i + 1; j < len(tokeep); j++ {
+// 			aa1 := tokeep[i]
+// 			aa2 := tokeep[j]
+// 			// the original paper defined the pairs as ordered, so i -> j is a different proposition to j -> i.
+// 			// hence, we have a separate struct for each order
+// 			pairs = append(pairs, Pair{i: aa1, j: aa2})
+// 			pairs = append(pairs, Pair{i: aa2, j: aa1})
+// 		}
+// 	}
+
+// 	return pairs
+// }
 
 /*
 modified from: https://github.com/mxschmitt/golang-combinations/blob/master/combinations.go
@@ -169,28 +357,6 @@ func get_set_temporally_unresolved(t *tree.Tree, p *Pair) {
 	}
 }
 
-// following Kryazhimskiy, Sergey, et al. "Prevalence of epistasis in the evolution of influenza A surface proteins." PLoS genetics 7.2 (2011): e1001301,
-// get the mean synonymous distance between randomly chosen pairs of nonsynonymous substitutions from the tree
-func get_tau(t *tree.Tree) float64 {
-	tns := Tns{}
-
-	tau_recur(nil, t.Root(), &tns)
-
-	sum_distances := 0.0
-	for i := range tns.distances {
-		sum_distances += tns.distances[i]
-	}
-
-	sum_weights := 0
-	for i := range tns.weights {
-		sum_weights += tns.weights[i]
-	}
-
-	tau := sum_distances / float64(sum_weights)
-
-	return tau
-}
-
 // for recording the synonymous distances between nonsynon substitutions
 type Tns struct {
 	distances []float64
@@ -279,159 +445,17 @@ func collect_distances(prevEdge *tree.Edge, curNode *tree.Node, tns *Tns, n int,
 	}
 }
 
-// Traverse the tree, storing the information about the changes present on branches.
-// Filter the changes based on some criteria (not external branches, > 1 occurence).
-// Make the pairs
-func get_pairs_from_tree(t *tree.Tree) []Pair {
+// func processChunktemporal(t *tree.Tree, pairs []Pair) {
+// 	for i := range pairs {
+// 		get_set_temporally_unresolved(t, &(pairs[i]))
+// 	}
+// }
 
-	// m is just a map from residue
-	m := make(map[string]int)
-	for _, e := range t.Edges() {
-		// skip external branches
-		if e.Right().Tip() {
-			continue
-		}
-		// AAs
-		AAs := e.Get_AA_residues()
-		for _, AA := range AAs {
-			if _, ok := m[AA]; ok {
-				m[AA]++
-			} else {
-				m[AA] = 1
-			}
-		}
-	}
-
-	// here we only keep residues where mutations occur at least once on the tree (follows original paper)
-	tokeep := make([]string, 0)
-	for key, value := range m {
-		if value >= 1 {
-			tokeep = append(tokeep, key)
-		}
-	}
-
-	sort.Strings(tokeep)
-
-	pairs := make([]Pair, 0)
-	for i := range tokeep {
-		for j := i + 1; j < len(tokeep); j++ {
-			aa1 := tokeep[i]
-			aa2 := tokeep[j]
-			// the original paper defined the pairs as ordered, so i -> j is a different proposition to j -> i.
-			// hence, we have a separate struct for each order
-			pairs = append(pairs, Pair{i: aa1, j: aa2})
-			pairs = append(pairs, Pair{i: aa2, j: aa1})
-		}
-	}
-
-	return pairs
-}
-
-// the tree's branches are labelled with "syn=" for non-protein-changing nucleotide changes,
-// and "AA=" for amino acid changes
-// edge.SynLen is also set to the inferred synonymous branch length
-func Epistasis(t *tree.Tree, features []annotation.Region, threads int) {
-	// the mean synonymous distance between non-synonymous pairs:
-	tau := get_tau(t)
-	fmt.Println("tau is: " + strconv.FormatFloat(tau, 'f', 8, 64))
-	fmt.Println()
-
-	pairs := get_pairs_from_tree(t)
-	// fmt.Println(len(pairs))
-	// os.Exit(0)
-
-	if threads > len(pairs) {
-		threads = len(pairs)
-	}
-
-	runtime.GOMAXPROCS(threads)
-
-	chunkSize := int(math.Floor(float64(len(pairs)) / float64(threads)))
-
-	var wgPairTemporal sync.WaitGroup
-	wgPairTemporal.Add(threads)
-	for i := 0; i < threads; i++ {
-		start := i * chunkSize
-		end := start + chunkSize
-		if i == threads-1 {
-			end = len(pairs)
-		}
-		go func() {
-			processChunktemporal(t, pairs[start:end])
-			wgPairTemporal.Done()
-		}()
-	}
-	wgPairTemporal.Wait()
-
-	counter := 0
-	m := make(map[int]int)
-	for i := range pairs {
-		if pairs[i].m_ij > 0 {
-			counter++
-			if _, ok := m[pairs[i].m_ij]; ok {
-				m[pairs[i].m_ij]++
-			} else {
-				m[pairs[i].m_ij] = 1
-			}
-			// fmt.Println(pairs[i].order)
-		}
-	}
-
-	// fmt.Print("total number of pairs is: ")
-	// fmt.Println(len(pairs))
-	// fmt.Println()
-
-	// fmt.Print("number of temporally unresolved pairs is: ")
-	// fmt.Println(counter)
-	// fmt.Println()
-
-	// fmt.Print("distribution of m_ijs is: ")
-	// fmt.Println(m)
-	// fmt.Println()
-
-	// os.Exit(0)
-
-	var wgPairsij sync.WaitGroup
-	wgPairsij.Add(threads)
-	for i := 0; i < threads; i++ {
-		start := i * chunkSize
-		end := start + chunkSize
-		if i == threads-1 {
-			end = len(pairs)
-		}
-		go func() {
-			processChunkij(t, pairs[start:end])
-			wgPairsij.Done()
-		}()
-	}
-	wgPairsij.Wait()
-
-	for i := range pairs {
-		pairs[i].E_tau = calc_E_tau(&(pairs[i]), tau)
-	}
-
-	sort.SliceStable(pairs, func(i, j int) bool {
-		return pairs[i].E_tau > pairs[j].E_tau
-	})
-
-	for _, pair := range pairs {
-		fmt.Println(pair)
-	}
-
-	// fmt.Println(pairs[72])
-}
-
-func processChunktemporal(t *tree.Tree, pairs []Pair) {
-	for i := range pairs {
-		get_set_temporally_unresolved(t, &(pairs[i]))
-	}
-}
-
-func processChunkij(t *tree.Tree, pairs []Pair) {
-	for i := range pairs {
-		ij(t, &(pairs[i]))
-	}
-}
+// func processChunkij(t *tree.Tree, pairs []Pair) {
+// 	for i := range pairs {
+// 		ij(t, &(pairs[i]))
+// 	}
+// }
 
 // {AA=orf1ab:4387 AA=orf1ab:6485 0 []}
 
