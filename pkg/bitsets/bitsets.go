@@ -1,7 +1,6 @@
 package bitsets
 
 import (
-	"errors"
 	"math/bits"
 	"math/rand"
 	"time"
@@ -17,6 +16,9 @@ func setBit(b byte, k int) byte {
 // Set the (1-based) kth bit (from the LHS) in an array of bytes to 1.
 // len(ba) * 8 must be >= k
 func SetBit(ba []byte, k int) {
+	if k > len(ba)*8 {
+		panic("bitset too small to set this bit")
+	}
 
 	byteindex := (k - 1) / 8
 	bitindex := (k - 1) % 8
@@ -54,6 +56,9 @@ func GetSetBits(ba []byte) []int {
 
 // Are the sets different
 func Different(aa, ba []byte) bool {
+	if len(aa) != len(ba) {
+		panic("different length bitsets")
+	}
 	for i := range aa {
 		if aa[i] != ba[i] {
 			return true
@@ -65,6 +70,9 @@ func Different(aa, ba []byte) bool {
 // Set difference aa - ba
 // is the same as aa AND the COMPLEMENT OF ba
 func SetDiff(aa, ba []byte) []byte {
+	if len(aa) != len(ba) {
+		panic("different length bitsets")
+	}
 	ca := make([]byte, len(aa), len(aa))
 	for i := range aa {
 		ca[i] = aa[i] & ^ba[i]
@@ -75,6 +83,12 @@ func SetDiff(aa, ba []byte) []byte {
 // Set difference aa - ba
 // is the same as aa AND the COMPLEMENT OF ba
 func InPlaceSetDiff(ca, aa, ba []byte) {
+	if len(aa) != len(ba) {
+		panic("different length bitsets")
+	}
+	if len(aa) != len(ca) {
+		panic("different length bitsets")
+	}
 	for i := range aa {
 		ca[i] = aa[i] & ^ba[i]
 	}
@@ -83,6 +97,9 @@ func InPlaceSetDiff(ca, aa, ba []byte) {
 // is aa a subset of ba
 // TO DO- test this
 func IsSubset(aa, ba []byte) bool {
+	if len(aa) != len(ba) {
+		panic("different length bitsets")
+	}
 	if IsAnyBitSet(SetDiff(aa, ba)) {
 		return false
 	}
@@ -92,6 +109,9 @@ func IsSubset(aa, ba []byte) bool {
 // Get the intersection of set bits from two equal length arrays of bytes.
 // Allocates and returns a new byte array which contains the intersection of set bits
 func Intersection(aa, ba []byte) []byte {
+	if len(aa) != len(ba) {
+		panic("different length bitsets")
+	}
 	ca := make([]byte, len(aa), len(aa))
 	for i := range aa {
 		ca[i] = aa[i] & ba[i]
@@ -101,19 +121,25 @@ func Intersection(aa, ba []byte) []byte {
 
 // Get the intersection of set bits from two equal length arrays of bytes.
 // Stores the result in ca, which has already been allocated
-func InPlaceIntersection(ca, aa, ba []byte) error {
+func InPlaceIntersection(ca, aa, ba []byte) {
 	if len(aa) != len(ba) {
-		return errors.New("different length bitsets")
+		panic("different length bitsets")
+	}
+	if len(aa) != len(ca) {
+		panic("different length bitsets")
 	}
 	for i := range aa {
 		ca[i] = aa[i] & ba[i]
 	}
-	return nil
 }
 
 // Get the intersection from an integer (representing a set bit) and a byte array.
 // Allocates and returns a new byte array which contains the intersection
 func IntersectionInt(ba []byte, k int) []byte {
+	if k > len(ba)*8 {
+		panic("bitset too small to set this bit")
+	}
+
 	aa := make([]byte, len(ba), len(ba))
 	SetBit(aa, k)
 
@@ -127,6 +153,9 @@ func IntersectionInt(ba []byte, k int) []byte {
 func VarIntersection(aaa [][]byte) []byte {
 	ba := aaa[0]
 	for _, aa := range aaa {
+		if len(aa) != len(ba) {
+			panic("different length bitsets")
+		}
 		for j, a := range aa {
 			ba[j] = ba[j] & a
 		}
@@ -137,6 +166,9 @@ func VarIntersection(aaa [][]byte) []byte {
 // Get the union of set bits from two equal length arrays of bytes.
 // Allocates and returns a new byte array which contains the union of set bits
 func Union(aa, ba []byte) []byte {
+	if len(aa) != len(ba) {
+		panic("different length bitsets")
+	}
 	ca := make([]byte, len(aa), len(aa))
 	for i := range aa {
 		ca[i] = aa[i] | ba[i]
@@ -146,14 +178,13 @@ func Union(aa, ba []byte) []byte {
 
 // Get the union of set bits from two equal length arrays of bytes.
 // Modifies the third array of bytes in place which contains the union of set bits
-func InPlaceUnion(ca, aa, ba []byte) error {
+func InPlaceUnion(ca, aa, ba []byte) {
 	if len(aa) != len(ba) {
-		return errors.New("different length bitsets")
+		panic("different length bitsets")
 	}
 	for i := range aa {
 		ca[i] = aa[i] | ba[i]
 	}
-	return nil
 }
 
 // Get the union from an integer (representing a set bit) and a byte array.
@@ -174,6 +205,9 @@ func UnionInt(ba []byte, k int) []byte {
 func VarUnion(aaa [][]byte) []byte {
 	ba := make([]byte, len(aaa[0]), len(aaa[0]))
 	for _, aa := range aaa {
+		if len(aa) != len(ba) {
+			panic("different length bitsets")
+		}
 		for j, a := range aa {
 			ba[j] = ba[j] | a
 		}
@@ -185,6 +219,9 @@ func VarUnion(aaa [][]byte) []byte {
 // Modifies an array of bytes in place which contains the union of set bits
 func InPlaceVarUnion(ba []byte, aaa [][]byte) {
 	for _, aa := range aaa {
+		if len(aa) != len(ba) {
+			panic("different length bitsets")
+		}
 		for j, b := range aa {
 			ba[j] = ba[j] | b
 		}
@@ -193,15 +230,15 @@ func InPlaceVarUnion(ba []byte, aaa [][]byte) {
 
 // Get all the bits that are set in either A or B but not both (using XOR)
 // Allocates and returns a new byte array which contains the symmetric difference
-func SymDiff(aa, ba []byte) ([]byte, error) {
+func SymDiff(aa, ba []byte) []byte {
 	if len(aa) != len(ba) {
-		return []byte{}, errors.New("different length bitsets")
+		panic("different length bitsets")
 	}
 	ca := make([]byte, len(ba), len(ba))
 	for i := range aa {
 		ca[i] = aa[i] ^ ba[i]
 	}
-	return ca, nil
+	return ca
 }
 
 // Randomly choose one bit out of all the set bits in ba
@@ -219,7 +256,6 @@ func RandomlyChooseSetBit(ba []byte) []byte {
 }
 
 // if the intersection is not an empty set, take it, else take the union
-// TO DO - test this
 func fitch(aa, ba []byte) []byte {
 	i := Intersection(aa, ba)
 	if IsAnyBitSet(i) {
@@ -243,6 +279,9 @@ func ThreeSetMPR(aa, ba, ca []byte) []byte {
 }
 
 func InPlaceThreeSetMPR(da, aa, ba, ca []byte) {
+	if len(da) != len(aa) {
+		panic("different length bitsets")
+	}
 	result := ThreeSetMPR(aa, ba, ca)
 	for i := range result {
 		da[i] = result[i]
@@ -309,6 +348,14 @@ func InPlaceThreeSetMPR(da, aa, ba, ca []byte) {
 // }
 
 func InPlaceVarMax(toSet []byte, args [][]byte) {
+	if len(toSet) != len(args[0]) {
+		panic("different length bitsets")
+	}
+	for i := 1; i < len(args); i++ {
+		if len(args[0]) != len(args[i]) {
+			panic("different length bitsets")
+		}
+	}
 	statecounts := make([]int, len(args[0])*8, len(args[0])*8)
 	for _, a := range args {
 		states := GetSetBits(a)
@@ -336,33 +383,33 @@ func InPlaceVarMax(toSet []byte, args [][]byte) {
 	}
 }
 
-func VarMax2(args [][]byte) []byte {
-	statecounts := make([]int, len(args[0])*8, len(args[0])*8)
-	for _, a := range args {
-		states := GetSetBits(a)
-		for _, s := range states {
-			statecounts[s-1]++
-		}
-	}
+// func VarMax2(args [][]byte) []byte {
+// 	statecounts := make([]int, len(args[0])*8, len(args[0])*8)
+// 	for _, a := range args {
+// 		states := GetSetBits(a)
+// 		for _, s := range states {
+// 			statecounts[s-1]++
+// 		}
+// 	}
 
-	maxes := make([]int, 0)
-	max := -1
-	for i, v := range statecounts {
-		if v > max {
-			max = v
-			maxes = []int{i + 1}
-		} else if v == max {
-			maxes = append(maxes, i+1)
-		}
-	}
+// 	maxes := make([]int, 0)
+// 	max := -1
+// 	for i, v := range statecounts {
+// 		if v > max {
+// 			max = v
+// 			maxes = []int{i + 1}
+// 		} else if v == max {
+// 			maxes = append(maxes, i+1)
+// 		}
+// 	}
 
-	ba := make([]byte, len(args[0]), len(args[0]))
-	for _, k := range maxes {
-		SetBit(ba, k)
-	}
+// 	ba := make([]byte, len(args[0]), len(args[0]))
+// 	for _, k := range maxes {
+// 		SetBit(ba, k)
+// 	}
 
-	return ba
-}
+// 	return ba
+// }
 
 // helper function for variadicByteArraysCover()
 func intInArray(ia []int, s int) bool {
@@ -409,7 +456,8 @@ func combinations(set []int, n int) (subsets [][]int) {
 	return subsets
 }
 
-func checkCoverage(coverer []int, coverees [][]byte) (bool, error) {
+// TO DO - test this
+func checkCoverage(coverer []int, coverees [][]byte) bool {
 	// first, check that the bitsets are the same length
 	l := 0
 	for i, a := range coverees {
@@ -418,7 +466,7 @@ func checkCoverage(coverer []int, coverees [][]byte) (bool, error) {
 			continue
 		}
 		if len(a) != l {
-			return false, errors.New("different length bitsets")
+			panic("different length bitsets")
 		}
 	}
 
@@ -436,16 +484,17 @@ func checkCoverage(coverer []int, coverees [][]byte) (bool, error) {
 			}
 		}
 		if !test {
-			return false, nil
+			return false
 		}
 	}
 
-	return true, nil
+	return true
 }
 
 // get the union of the smallest covering sets
 // see: Madison (1989), https://onlinelibrary.wiley.com/doi/pdf/10.1111/j.1096-0031.1989.tb00569.x
-func InPlaceVarCover(toSet []byte, args [][]byte) error {
+// TO DO - test this
+func InPlaceVarCover(toSet []byte, args [][]byte) {
 	// first, check that the bitsets are the same length
 	l := 0
 	for i, a := range args {
@@ -454,7 +503,7 @@ func InPlaceVarCover(toSet []byte, args [][]byte) error {
 			continue
 		}
 		if len(a) != l {
-			return errors.New("different length bitsets")
+			panic("different length bitsets")
 		}
 	}
 
@@ -523,10 +572,7 @@ func InPlaceVarCover(toSet []byte, args [][]byte) error {
 		combs := combinations(remainingstates, n)
 		// then test each combination in turn
 		for i, c := range combs {
-			covers, err := checkCoverage(c, newargs)
-			if err != nil {
-				return err
-			}
+			covers := checkCoverage(c, newargs)
 			// if it covers the sets, then we know that this number of states == the smallest set,
 			// and we know that we only have to test the remaining combinations of this size,
 			// so we keep those (stilltotest) and break out of both loops
@@ -557,10 +603,7 @@ func InPlaceVarCover(toSet []byte, args [][]byte) error {
 	//  * thirdly, if there is anything in stilltotest, check these as coverers too,
 	//    and if they are, take the union of the whole lot
 	for _, totest := range stilltotest {
-		covers, err := checkCoverage(totest, newargs)
-		if err != nil {
-			return err
-		}
+		covers := checkCoverage(totest, newargs)
 		// and set the bits of the other combs of the same size if they pass the coverage test
 		if covers {
 			// fmt.Println(totest)
@@ -580,7 +623,6 @@ func InPlaceVarCover(toSet []byte, args [][]byte) error {
 	}
 
 	// and we're done, jesus.
-	return nil
 }
 
 // func main() {

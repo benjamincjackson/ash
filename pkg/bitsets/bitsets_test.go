@@ -2,208 +2,11 @@ package bitsets
 
 import (
 	"fmt"
+	"reflect"
 	"testing"
 )
 
-// func tempGetByteArraysUnion(aa, ba []byte) ([]byte, error) {
-// 	if len(aa) != len(ba) {
-// 		return []byte{}, errors.New("different length arrays")
-// 	}
-// 	ca := make([]byte, len(aa))
-// 	for i := range aa {
-// 		ca[i] = aa[i] | ba[i]
-// 	}
-// 	return ca, nil
-// }
-
-// func operateOnSlice0(ba []byte, c chan int) {
-// 	oa := []byte{8, 9}
-// 	newValue, _ := tempGetByteArraysUnion(ba, oa)
-
-// 	sum := 0
-// 	for i := range newValue {
-// 		sum += int(newValue[i])
-// 	}
-
-// 	c <- sum
-// }
-
-// func operateOnSlice1(ba []byte, c chan int) {
-// 	oa := []byte{1, 7, 84}
-// 	newValue, _ := tempGetByteArraysUnion(ba, oa)
-
-// 	sum := 0
-// 	for i := range newValue {
-// 		sum += int(newValue[i])
-// 	}
-
-// 	c <- sum
-// }
-
-// const n = 1000
-
-// func TestSliceThreadSafety(t *testing.T) {
-
-// 	var chans [2]chan int
-// 	for i := range chans {
-// 		chans[i] = make(chan int, n)
-// 	}
-
-// 	var s [][]byte
-// 	s = append(s, []byte{1, 2})
-// 	s = append(s, []byte{99, 0})
-
-// 	var results0 [n]int
-// 	var results1 [n]int
-
-// 	for j := 0; j < n; j++ {
-// 		go operateOnSlice0(s[0], chans[0])
-// 		go operateOnSlice1(s[1], chans[1])
-// 	}
-
-// 	for i := 0; i < n; i++ {
-// 		results0[i] = <-chans[0]
-// 	}
-
-// 	for i := 0; i < n; i++ {
-// 		results1[i] = <-chans[1]
-// 	}
-
-// 	var test0 int
-// 	for i := 0; i < n; i++ {
-// 		if i == 0 {
-// 			test0 = results0[i]
-// 		} else {
-// 			if test0 != results0[i] {
-// 				t.Errorf("%d", results0[i])
-// 			}
-// 		}
-// 	}
-
-// 	var test1 int
-// 	for i := 0; i < n; i++ {
-// 		if i == 0 {
-// 			test1 = results1[i]
-// 		} else {
-// 			if test1 != results1[i] {
-// 				t.Errorf("%d", results1[i])
-// 			}
-// 		}
-// 	}
-// }
-
-// func BenchmarkSetByteArrayBit(b *testing.B) {
-// 	b.ReportAllocs()
-// 	d := []byte{0, 0}
-// 	for i := 0; i < b.N; i++ {
-// 		SetBit(d, 7)
-// 	}
-// }
-
-// func BenchmarkIntersection(b *testing.B) {
-// 	b.ReportAllocs()
-// 	d := []byte{0, 0}
-
-// 	SetBit(d, 1)
-// 	SetBit(d, 2)
-// 	SetBit(d, 3)
-// 	SetBit(d, 9)
-
-// 	e := []byte{0, 0}
-
-// 	SetBit(e, 1)
-// 	SetBit(e, 2)
-// 	SetBit(e, 3)
-// 	SetBit(e, 10)
-
-// 	for i := 0; i < b.N; i++ {
-// 		_ = Intersection(d, e)
-// 	}
-// }
-
-// func BenchmarkUnion(b *testing.B) {
-// 	b.ReportAllocs()
-// 	d := []byte{0, 0}
-
-// 	SetBit(d, 1)
-// 	SetBit(d, 2)
-// 	SetBit(d, 3)
-// 	SetBit(d, 9)
-
-// 	e := []byte{0, 0}
-
-// 	SetBit(e, 1)
-// 	SetBit(e, 2)
-// 	SetBit(e, 3)
-// 	SetBit(e, 10)
-
-// 	h := []byte{0, 0}
-
-// 	for i := 0; i < b.N; i++ {
-// 		// _, _ = GetByteArraysUnion(d, e)
-// 		_ = VarUnion([][]byte{d, e, h})
-// 	}
-// }
-
-// func BenchmarkMapIntersection(b *testing.B) {
-// 	d := make(map[int]bool)
-// 	d[1] = true
-// 	d[2] = true
-// 	d[3] = true
-// 	d[9] = true
-
-// 	e := make(map[int]bool)
-// 	e[1] = true
-// 	e[2] = true
-// 	e[3] = true
-// 	e[10] = true
-
-// 	f := make(map[int]bool)
-
-// 	for i := 0; i < b.N; i++ {
-// 		for k := range d {
-// 			if e[k] {
-// 				f[k] = true
-// 			}
-// 		}
-// 	}
-// }
-
-// func BenchmarkMapUnion(b *testing.B) {
-// 	d := make(map[int]bool)
-// 	d[1] = true
-// 	d[2] = true
-// 	d[3] = true
-// 	d[9] = true
-
-// 	e := make(map[int]bool)
-// 	e[1] = true
-// 	e[2] = true
-// 	e[3] = true
-// 	e[10] = true
-
-// 	f := make(map[int]bool)
-
-// 	for i := 0; i < b.N; i++ {
-// 		for k := range d {
-// 			f[k] = true
-// 		}
-// 		for k := range e {
-// 			f[k] = true
-// 		}
-// 	}
-// }
-
-// func BenchmarkArrayUnion(b *testing.B) {
-// 	a := []int{1, 2, 3, 9}
-// 	s := 8
-
-// 	for i := 0; i < b.N; i++ {
-// 		_ = intInArray(a, s)
-// 	}
-// }
-
-func Test_SetBits(t *testing.T) {
+func Test_SetBit(t *testing.T) {
 	ba := []byte{0}
 	SetBit(ba, 1)
 	if ba[0] != []byte{128}[0] {
@@ -254,6 +57,52 @@ func Test_SetBits(t *testing.T) {
 	}
 }
 
+func Test_IsAnyBitSet(t *testing.T) {
+	aa := []byte{0, 128}
+	ba := []byte{0, 0}
+
+	if !IsAnyBitSet(aa) {
+		t.Errorf("error in Test_IsAnyBitSet")
+	}
+
+	if IsAnyBitSet(ba) {
+		t.Errorf("error in Test_IsAnyBitSet")
+	}
+}
+
+func Test_GetSetBits(t *testing.T) {
+	aa := []byte{128}
+	ba := []byte{0}
+	ca := []byte{128, 128}
+
+	if !reflect.DeepEqual(GetSetBits(aa), []int{1}) {
+		t.Errorf("error in Test_GetSetBits")
+	}
+
+	if !reflect.DeepEqual(GetSetBits(ba), []int{}) {
+		t.Errorf("error in Test_GetSetBits")
+	}
+
+	if !reflect.DeepEqual(GetSetBits(ca), []int{1, 9}) {
+		t.Errorf("error in Test_GetSetBits")
+	}
+}
+
+func Test_Different(t *testing.T) {
+	aa := []byte{128}
+	ba := []byte{0}
+	ca := []byte{128, 128}
+	da := []byte{128, 128}
+
+	if !Different(aa, ba) {
+		t.Errorf("error in Test_Different")
+	}
+
+	if Different(ca, da) {
+		t.Errorf("error in Test_Different")
+	}
+}
+
 func Test_SetDiff(t *testing.T) {
 	aa := []byte{128}
 	ba := []byte{0}
@@ -264,78 +113,34 @@ func Test_SetDiff(t *testing.T) {
 	if ca[0] != []byte{128}[0] {
 		t.Errorf("error in Test_SetDiff")
 	}
+}
+
+func Test_InPlaceSetDiff(t *testing.T) {
+	aa := []byte{128}
+	ba := []byte{0}
+	ca := make([]byte, 1)
 
 	InPlaceSetDiff(ca, aa, ba)
+
+	if len(ca) != 1 {
+		t.Errorf("error in Test_InPlaceSetDiff")
+	}
 	if ca[0] != []byte{128}[0] {
-		t.Errorf("error in Test_SetDiff")
+		t.Errorf("error in Test_InPlaceSetDiff")
 	}
 }
 
-func Test_Union(t *testing.T) {
-	aa := []byte{128}
-	ba := []byte{16}
-	ca := Union(aa, ba)
-	if len(ca) != 1 {
-		t.Errorf("error in Test_Union")
-	}
-	if ca[0] != []byte{144}[0] {
-		t.Errorf("error in Test_Union")
-	}
-}
+func Test_IsSubset(t *testing.T) {
+	aa := []byte{255}
+	ba := []byte{3}
+	ca := []byte{4}
 
-func Test_InPlaceUnion(t *testing.T) {
-	aa := []byte{128}
-	ba := []byte{16}
-	ca := []byte{0}
-	_ = InPlaceUnion(ca, aa, ba)
-	if len(ca) != 1 {
-		t.Errorf("error in Test_InPlaceUnion")
+	if !IsSubset(ba, aa) {
+		t.Errorf("error in Test_IsSubset")
 	}
-	if ca[0] != []byte{144}[0] {
-		t.Errorf("error in Test_InPlaceUnion")
-	}
-}
 
-func Test_UnionInt(t *testing.T) {
-	aa := []byte{64}
-	i := 1
-	ca := UnionInt(aa, i)
-	if len(ca) != 1 {
-		t.Errorf("error in Test_Union_Int")
-	}
-	if ca[0] != []byte{192}[0] {
-		t.Errorf("error in Test_Union_Int")
-	}
-}
-
-func Test_VarUnion(t *testing.T) {
-	aaa := make([][]byte, 0)
-	aaa = append(aaa, []byte{1})
-	aaa = append(aaa, []byte{2})
-	aaa = append(aaa, []byte{4})
-	aaa = append(aaa, []byte{128})
-	ca := VarUnion(aaa)
-	if len(ca) != 1 {
-		t.Errorf("error in Test_VarUnion")
-	}
-	if ca[0] != []byte{135}[0] {
-		t.Errorf("error in Test_VarUnion")
-	}
-}
-
-func Test_InPlaceVarUnion(t *testing.T) {
-	aaa := make([][]byte, 0)
-	aaa = append(aaa, []byte{1})
-	aaa = append(aaa, []byte{2})
-	aaa = append(aaa, []byte{4})
-	aaa = append(aaa, []byte{128})
-	ca := []byte{0}
-	InPlaceVarUnion(ca, aaa)
-	if len(ca) != 1 {
-		t.Errorf("error in Test_VarUnion")
-	}
-	if ca[0] != []byte{135}[0] {
-		t.Errorf("error in Test_VarUnion")
+	if IsSubset(ca, ba) {
+		t.Errorf("error in Test_IsSubset")
 	}
 }
 
@@ -397,13 +202,119 @@ func Test_InPlaceIntersection(t *testing.T) {
 	}
 }
 
+func Test_VarIntersection(t *testing.T) {
+	aaa := make([][]byte, 3)
+	aaa[0] = []byte{1}
+	aaa[1] = []byte{2}
+	aaa[2] = []byte{4}
+
+	ba := VarIntersection(aaa)
+
+	if ba[0] != []byte{0}[0] {
+		t.Errorf("error in Test_VarIntersection")
+	}
+
+	aaa = make([][]byte, 3)
+	aaa[0] = []byte{255}
+	aaa[1] = []byte{1}
+	aaa[2] = []byte{7}
+
+	ba = VarIntersection(aaa)
+
+	if ba[0] != []byte{1}[0] {
+		t.Errorf("error in Test_VarIntersection")
+	}
+
+	aaa = make([][]byte, 3)
+	aaa[0] = []byte{255, 255}
+	aaa[1] = []byte{1, 1}
+	aaa[2] = []byte{0, 1}
+
+	ba = VarIntersection(aaa)
+
+	if len(ba) != 2 {
+		t.Errorf("error in Test_VarIntersection")
+	}
+	if ba[0] != 0 {
+		t.Errorf("error in Test_VarIntersection")
+	}
+	if ba[1] != 1 {
+		t.Errorf("error in Test_VarIntersection")
+	}
+}
+
+func Test_Union(t *testing.T) {
+	aa := []byte{128}
+	ba := []byte{16}
+	ca := Union(aa, ba)
+	if len(ca) != 1 {
+		t.Errorf("error in Test_Union")
+	}
+	if ca[0] != []byte{144}[0] {
+		t.Errorf("error in Test_Union")
+	}
+}
+
+func Test_InPlaceUnion(t *testing.T) {
+	aa := []byte{128}
+	ba := []byte{16}
+	ca := []byte{0}
+	InPlaceUnion(ca, aa, ba)
+	if len(ca) != 1 {
+		t.Errorf("error in Test_InPlaceUnion")
+	}
+	if ca[0] != []byte{144}[0] {
+		t.Errorf("error in Test_InPlaceUnion")
+	}
+}
+
+func Test_UnionInt(t *testing.T) {
+	aa := []byte{64}
+	i := 1
+	ca := UnionInt(aa, i)
+	if len(ca) != 1 {
+		t.Errorf("error in Test_Union_Int")
+	}
+	if ca[0] != []byte{192}[0] {
+		t.Errorf("error in Test_Union_Int")
+	}
+}
+
+func Test_VarUnion(t *testing.T) {
+	aaa := make([][]byte, 0)
+	aaa = append(aaa, []byte{1})
+	aaa = append(aaa, []byte{2})
+	aaa = append(aaa, []byte{4})
+	aaa = append(aaa, []byte{128})
+	ca := VarUnion(aaa)
+	if len(ca) != 1 {
+		t.Errorf("error in Test_VarUnion")
+	}
+	if ca[0] != []byte{135}[0] {
+		t.Errorf("error in Test_VarUnion")
+	}
+}
+
+func Test_InPlaceVarUnion(t *testing.T) {
+	aaa := make([][]byte, 0)
+	aaa = append(aaa, []byte{1})
+	aaa = append(aaa, []byte{2})
+	aaa = append(aaa, []byte{4})
+	aaa = append(aaa, []byte{128})
+	ca := []byte{0}
+	InPlaceVarUnion(ca, aaa)
+	if len(ca) != 1 {
+		t.Errorf("error in Test_VarUnion")
+	}
+	if ca[0] != []byte{135}[0] {
+		t.Errorf("error in Test_VarUnion")
+	}
+}
+
 func Test_SymDiff(t *testing.T) {
 	aa := []byte{64}
 	ba := []byte{128}
-	ca, err := SymDiff(aa, ba)
-	if err != nil {
-		t.Error(err)
-	}
+	ca := SymDiff(aa, ba)
 	if len(ca) != 1 {
 		t.Errorf("error in Test_SymDiff")
 	}
@@ -427,6 +338,60 @@ func Test_RandomlyChooseSetBit(t *testing.T) {
 		}
 	}
 	fmt.Println("err")
+}
+
+// if the intersection is not an empty set, take it, else take the union
+func Test_fitch(t *testing.T) {
+	aa := []byte{1, 0}
+	ba := []byte{1, 255}
+	ca := fitch(aa, ba)
+	if len(ca) != 2 {
+		t.Errorf("error in Test_fitch")
+	}
+	if ca[0] != 1 {
+		t.Errorf("error in Test_fitch")
+	}
+	if ca[1] != 0 {
+		t.Errorf("error in Test_fitch")
+	}
+
+	aa = []byte{1, 0}
+	ba = []byte{0, 255}
+	ca = fitch(aa, ba)
+	if len(ca) != 2 {
+		t.Errorf("error in Test_fitch")
+	}
+	if ca[0] != 1 {
+		t.Errorf("error in Test_fitch")
+	}
+	if ca[1] != 255 {
+		t.Errorf("error in Test_fitch")
+	}
+}
+
+// A = [(aa ⊗ ba) ⊗ ca] ∩ [(aa ⊗ ca) ⊗ ba] ∩ [(ba ⊗ ca) ⊗ aa]
+// "⊗" is the fitch operation
+func Test_ThreeSetMPR(t *testing.T) {
+	aa := []byte{1}
+	ba := []byte{2}
+	ca := []byte{1}
+
+	if !reflect.DeepEqual(ThreeSetMPR(aa, ba, ca), []byte{1}) {
+		t.Errorf("error in Test_ThreeSetMPR")
+	}
+}
+
+func Test_InPlaceThreeSetMPR(t *testing.T) {
+	aa := []byte{1}
+	ba := []byte{2}
+	ca := []byte{1}
+
+	da := make([]byte, 1)
+	InPlaceThreeSetMPR(da, aa, ba, ca)
+
+	if !reflect.DeepEqual(da, []byte{1}) {
+		t.Errorf("error in Test_ThreeSetMPR")
+	}
 }
 
 func Test_InPlaceVarMax(t *testing.T) {
@@ -463,7 +428,46 @@ func Test_InPlaceVarMax(t *testing.T) {
 	if ca[0] != []byte{2}[0] {
 		t.Errorf("error in Test_InPlaceVarMax")
 	}
+
+	aaa = make([][]byte, 0)
+	aaa = append(aaa, []byte{1, 1})
+	aaa = append(aaa, []byte{2, 1})
+	aaa = append(aaa, []byte{1, 1})
+	aaa = append(aaa, []byte{255, 255})
+	aaa = append(aaa, []byte{2, 1})
+	ca = []byte{0, 0}
+
+	InPlaceVarMax(ca, aaa)
+
+	if len(ca) != 2 {
+		t.Errorf("error in Test_InPlaceVarMax")
+	}
+	if !reflect.DeepEqual(ca, []byte{0, 1}) {
+		t.Errorf("error in Test_InPlaceVarMax")
+	}
 }
+
+func Test_intInArray(t *testing.T) {
+	if !intInArray([]int{1, 2, 3}, 1) {
+		t.Errorf("error in Test_intInArray")
+	}
+	if intInArray([]int{1, 2, 3}, 4) {
+		t.Errorf("error in Test_intInArray")
+	}
+}
+
+func Test_combinations(t *testing.T) {
+	set := []int{1, 2, 3}
+	n := 2
+
+	if !reflect.DeepEqual(combinations(set, n), [][]int{{1, 2}, {1, 3}, {2, 3}}) {
+		t.Errorf("error in Test_combinations")
+	}
+}
+
+// func Test_checkCoverage(t *testing.T) {
+
+// }
 
 func Test_InPlaceVarCover(t *testing.T) {
 	// see: Madison (1989), https://onlinelibrary.wiley.com/doi/pdf/10.1111/j.1096-0031.1989.tb00569.x
@@ -491,7 +495,7 @@ func Test_InPlaceVarCover(t *testing.T) {
 
 	ca := []byte{0}
 
-	_ = InPlaceVarCover(ca, aaa)
+	InPlaceVarCover(ca, aaa)
 
 	if len(ca) != 1 {
 		t.Errorf("error in Test_InPlaceVarCover")

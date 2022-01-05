@@ -70,7 +70,7 @@ func uppassMove(upnodestates []byte, downnodestates [][]byte, algoUp int, idx []
 			case 0: // hard
 				bitsets.InPlaceVarMax(upnodestates[start:stop], subset)
 			case 1: // soft
-				_ = bitsets.InPlaceVarCover(upnodestates[start:stop], subset)
+				bitsets.InPlaceVarCover(upnodestates[start:stop], subset)
 			}
 		default: // (length == 0) this is a tip, we don't need to do anything (actually we should never get here)
 			break
