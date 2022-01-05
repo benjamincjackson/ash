@@ -95,7 +95,6 @@ func InPlaceSetDiff(ca, aa, ba []byte) {
 }
 
 // is aa a subset of ba
-// TO DO- test this
 func IsSubset(aa, ba []byte) bool {
 	if len(aa) != len(ba) {
 		panic("different length bitsets")
@@ -267,7 +266,6 @@ func fitch(aa, ba []byte) []byte {
 
 // ThreeSetMPR
 // A = [(aa ⊗ ba) ⊗ ca] ∩ [(aa ⊗ ca) ⊗ ba] ∩ [(ba ⊗ ca) ⊗ aa]
-// TO DO - test this
 func ThreeSetMPR(aa, ba, ca []byte) []byte {
 	d := fitch(fitch(aa, ba), ca)
 	e := fitch(fitch(aa, ca), ba)
@@ -456,7 +454,7 @@ func combinations(set []int, n int) (subsets [][]int) {
 	return subsets
 }
 
-// TO DO - test this
+// TO DO - (unit) test this
 func checkCoverage(coverer []int, coverees [][]byte) bool {
 	// first, check that the bitsets are the same length
 	l := 0
@@ -493,7 +491,6 @@ func checkCoverage(coverer []int, coverees [][]byte) bool {
 
 // get the union of the smallest covering sets
 // see: Madison (1989), https://onlinelibrary.wiley.com/doi/pdf/10.1111/j.1096-0031.1989.tb00569.x
-// TO DO - test this
 func InPlaceVarCover(toSet []byte, args [][]byte) {
 	// first, check that the bitsets are the same length
 	l := 0
