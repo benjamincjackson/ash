@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"math"
 	"runtime"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -84,17 +83,18 @@ func Epistasis(t *tree.Tree, features []annotation.Region, threads int) {
 	// the mean synonymous distance between non-synonymous pairs:
 	tau := get_tau(t)
 	fmt.Println("tau is: " + strconv.FormatFloat(tau, 'f', 8, 64))
-	fmt.Println()
 
 	aas_to_keep := get_aas_to_keep(t)
-	// fmt.Println(len(aas_to_keep))
-	// os.Exit(0)
+	fmt.Println("number of amino acids to analyse is: " + strconv.Itoa(len(aas_to_keep)))
+	// fmt.Println()
 
 	runtime.GOMAXPROCS(threads)
 
 	cPair := make(chan Pair, threads)
 	cResults := make(chan Result, threads)
-	cResultsAgg := make(chan []Result)
+	// cResultsAgg := make(chan []Result)
+
+	cWriteDone := make(chan bool)
 
 	go func() {
 		for i := range aas_to_keep {
@@ -121,20 +121,24 @@ func Epistasis(t *tree.Tree, features []annotation.Region, threads int) {
 		}()
 	}
 
-	go aggregateResults(cResults, cResultsAgg)
+	// go aggregateResults(cResults, cResultsAgg)
+
+	go printResults(cResults, cWriteDone)
 
 	wgPairs.Wait()
 	close(cResults)
 
-	results := <-cResultsAgg
+	_ = <-cWriteDone
 
-	sort.SliceStable(results, func(i, j int) bool {
-		return results[i].E_tau > results[j].E_tau
-	})
+	// results := <-cResultsAgg
 
-	for i := range results {
-		fmt.Println(results[i])
-	}
+	// sort.SliceStable(results, func(i, j int) bool {
+	// 	return results[i].E_tau > results[j].E_tau
+	// })
+
+	// for i := range results {
+	// 	fmt.Println(results[i])
+	// }
 }
 
 // following Kryazhimskiy, Sergey, et al. "Prevalence of epistasis in the evolution of influenza A surface proteins." PLoS genetics 7.2 (2011): e1001301,
@@ -216,6 +220,17 @@ func aggregateResults(cResultsIn chan Result, cResultsOut chan []Result) {
 	}
 
 	cResultsOut <- results
+}
+
+func printResults(cResultsIn chan Result, cWriteDone chan bool) {
+
+	fmt.Println("i,j,e_tau")
+
+	for r := range cResultsIn {
+		fmt.Println(r.i + "," + r.j + "," + strconv.FormatFloat(r.E_tau, 'f', 6, 64))
+	}
+
+	cWriteDone <- true
 }
 
 // // Traverse the tree, storing the information about the changes present on branches.
