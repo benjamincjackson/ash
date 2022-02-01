@@ -261,6 +261,16 @@ func ash(treeIn string, alignmentFile string, variantsConfig string, genbankFile
 
 		parsimony.LabelChangesAnno(t, features, characterStates, states)
 
+		if len(treeOut) > 0 {
+			fout, err := os.Create(treeOut)
+			if err != nil {
+				return err
+			}
+			defer fout.Close()
+
+			fout.WriteString(t.NexusOptionalComments(annotateNodes, annotateTips))
+		}
+
 	case "nuc":
 		// genbank annotation parsing:
 		features, err := annotation.GetRegions(genbankFile, nuc)
@@ -270,7 +280,7 @@ func ash(treeIn string, alignmentFile string, variantsConfig string, genbankFile
 
 		parsimony.LabelChangesAnno(t, features, characterStates, states)
 
-		f, err := os.Create("branchlengths.tsv")
+		f, err := os.Create("branchlengths100k.tsv")
 		if err != nil {
 			return err
 		}
