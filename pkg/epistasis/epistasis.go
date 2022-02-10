@@ -10,7 +10,7 @@ import (
 	"sync"
 
 	"github.com/benjamincjackson/ash/pkg/annotation"
-	"github.com/benjamincjackson/ash/pkg/tree"
+	"github.com/benjamincjackson/gotree/tree"
 )
 
 // a reduced-size struct which just the result for one pair in it

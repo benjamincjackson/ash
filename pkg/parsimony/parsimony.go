@@ -3,7 +3,7 @@ package parsimony
 import (
 	"github.com/benjamincjackson/ash/pkg/bitsets"
 	"github.com/benjamincjackson/ash/pkg/characterio"
-	"github.com/benjamincjackson/ash/pkg/tree"
+	"github.com/benjamincjackson/gotree/tree"
 )
 
 // First pass of the parsimony reconstruction

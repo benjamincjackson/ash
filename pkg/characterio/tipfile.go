@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/benjamincjackson/ash/pkg/bitsets"
-	"github.com/benjamincjackson/ash/pkg/tree"
+	"github.com/benjamincjackson/gotree/tree"
 )
 
 // type CharacterStruct struct {

@@ -14,7 +14,7 @@ import (
 	"github.com/cov-ert/gofasta/pkg/genbank"
 
 	"github.com/benjamincjackson/ash/pkg/bitsets"
-	"github.com/benjamincjackson/ash/pkg/tree"
+	"github.com/benjamincjackson/gotree/tree"
 )
 
 // CharacterStruct is the info for one character (e.g. one column in the alignment)

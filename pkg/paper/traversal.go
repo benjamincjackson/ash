@@ -9,7 +9,7 @@ import (
 	"github.com/benjamincjackson/ash/pkg/annotation"
 	"github.com/benjamincjackson/ash/pkg/bitsets"
 	"github.com/benjamincjackson/ash/pkg/characterio"
-	"github.com/benjamincjackson/ash/pkg/tree"
+	"github.com/benjamincjackson/gotree/tree"
 )
 
 func LabelChangesSynNonsyn(t *tree.Tree, regions []annotation.Region, characters []characterio.CharacterStruct, states [][]byte) {

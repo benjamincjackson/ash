@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/benjamincjackson/ash/pkg/tree"
+	"github.com/benjamincjackson/gotree/tree"
 )
 
 func GetPrintMutSpec(t *tree.Tree) {

@@ -3,7 +3,7 @@ package ancestry
 import (
 	"errors"
 
-	"github.com/benjamincjackson/ash/pkg/tree"
+	"github.com/benjamincjackson/gotree/tree"
 )
 
 // get the MRCA (node # of) of all the sequences that AREN'T the outgroup

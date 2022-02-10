@@ -16,10 +16,11 @@ import (
 	"github.com/benjamincjackson/ash/pkg/bitsets"
 	"github.com/benjamincjackson/ash/pkg/characterio"
 	"github.com/benjamincjackson/ash/pkg/epistasis"
-	"github.com/benjamincjackson/ash/pkg/newick"
 	"github.com/benjamincjackson/ash/pkg/paper"
 	"github.com/benjamincjackson/ash/pkg/parsimony"
-	"github.com/benjamincjackson/ash/pkg/tree"
+
+	"github.com/benjamincjackson/gotree/newick"
+	"github.com/benjamincjackson/gotree/tree"
 )
 
 func morethanone(ba ...bool) bool {
