@@ -9,7 +9,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/cov-ert/gofasta/pkg/alphabet"
 	"github.com/cov-ert/gofasta/pkg/fastaio"
 	"github.com/cov-ert/gofasta/pkg/genbank"
 
@@ -308,7 +307,7 @@ func countVariantsFastaInner(variantsIn []CharacterStruct, cFR chan fastaio.Fast
 	var newvar string
 	var rawnuc byte
 	var nucs []string
-	codonMap := alphabet.MakeCodonDict()
+	codonMap := MakeCodonDict()
 	nucArr := makeNucLookupArray()
 
 	// Make the data structures for keeping information about the characters
@@ -449,7 +448,7 @@ func typeVariants(idx []StartStop, l int, variantsIn []CharacterStruct, cFR chan
 	var nucs []string
 	var bitToSet int
 	var start, stop int
-	codonMap := alphabet.MakeCodonDict()
+	codonMap := MakeCodonDict()
 	nucArr := makeNucLookupArray()
 
 	for record := range cFR {

@@ -5,6 +5,7 @@ go 1.17
 require (
 	github.com/cov-ert/gofasta v0.0.4
 	github.com/spf13/cobra v1.0.0
+	gonum.org/v1/gonum v0.9.3
 )
 
 require (

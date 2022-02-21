@@ -22,12 +22,13 @@ type Result struct {
 
 // a struct containing info about one pair's consecutive mutations over the tree
 type Pair struct {
-	i     string                   // the name of the first site
-	j     string                   // the name of the second site
-	m_ij  int                      // number of branches with changes at BOTH sites i and j on
-	t_pi  []float64                // list of synonymous distances between pairs of nonsynonymous changes at sites i and j
-	order map[*tree.Edge][2]string // what is the order of the temporally unresolved mutations in this permutation
-	E_tau float64
+	i             string                   // the name of the first site
+	j             string                   // the name of the second site
+	m_ij          int                      // number of branches with changes at BOTH sites i and j on
+	t_pi          []float64                // list of synonymous distances between pairs of nonsynonymous changes at sites i and j
+	order         map[*tree.Edge][2]string // what is the order of the temporally unresolved mutations in this permutation
+	E_tau_tempsum float64
+	E_tau         float64
 }
 
 // func (p *Pair) add_m_ij() {
@@ -38,9 +39,27 @@ func (p *Pair) set_m_ij(m_ij int) {
 	p.m_ij = m_ij
 }
 
+// see equation (1) in Kryazhimskiy, Sergey, et al. "Prevalence of epistasis in the evolution of influenza A surface proteins." PLoS genetics 7.2 (2011): e1001301.
+func (p *Pair) add_E_tau(tau float64) {
+	E_tau_temp := 0.0
+	for i := range p.t_pi {
+		E_tau_temp += math.Exp((p.t_pi[i] * -1) / tau)
+	}
+	p.E_tau_tempsum += E_tau_temp
+}
+
+func (p *Pair) calc_mean_E_tau() {
+	d := 1 << p.m_ij
+	p.E_tau = p.E_tau_tempsum / float64(d)
+}
+
 // n is the nth possible order, i is a value of t_pi
 func (p *Pair) append_t_pi(i float64) {
 	p.t_pi = append(p.t_pi, i)
+}
+
+func (p *Pair) reset_t_pi() {
+	p.t_pi = make([]float64, 0)
 }
 
 func (p *Pair) get_i() string {
@@ -95,9 +114,9 @@ func Epistasis(t *tree.Tree, features []annotation.Region, threads int) {
 
 	cPair := make(chan Pair, threads)
 	cResults := make(chan Result, threads)
-	// cResultsAgg := make(chan []Result)
+	cResultsAgg := make(chan []Result)
 
-	cWriteDone := make(chan bool)
+	// cWriteDone := make(chan bool)
 
 	go func() {
 		for i := range aas_to_keep {
@@ -124,24 +143,24 @@ func Epistasis(t *tree.Tree, features []annotation.Region, threads int) {
 		}()
 	}
 
-	// go aggregateResults(cResults, cResultsAgg)
+	go aggregateResults(cResults, cResultsAgg)
 
-	go printResults(cResults, cWriteDone)
+	// go printResults(cResults, cWriteDone)
 
 	wgPairs.Wait()
 	close(cResults)
 
-	_ = <-cWriteDone
+	// _ = <-cWriteDone
 
-	// results := <-cResultsAgg
+	results := <-cResultsAgg
 
-	// sort.SliceStable(results, func(i, j int) bool {
-	// 	return results[i].E_tau > results[j].E_tau
-	// })
+	sort.SliceStable(results, func(i, j int) bool {
+		return results[i].E_tau > results[j].E_tau
+	})
 
-	// for i := range results {
-	// 	fmt.Println(results[i])
-	// }
+	for i := range results {
+		fmt.Println(results[i])
+	}
 }
 
 // possible temporary function to summarise all the temporarily-unresolved mutation-branch combinations
@@ -256,6 +275,8 @@ func process_one_pair(p Pair, t *tree.Tree, tau float64) Result {
 	// recur down the tree without too many cares in the world
 	if m_ij == 0 {
 		ij_recur(nil, t.Root(), &p, false, 0.0)
+		p.add_E_tau(tau)
+		p.reset_t_pi()
 	} else {
 		// otherwise, let's do the order 2^^n stuff in a loop to
 		// prevent an explosion of memory use
@@ -272,12 +293,15 @@ func process_one_pair(p Pair, t *tree.Tree, tau float64) Result {
 			}
 			p.set_order(om)
 			ij_recur_unresolved(nil, t.Root(), &p, false, 0.0)
+			p.add_E_tau(tau)
+			p.reset_t_pi()
 		}
 	}
 
 	// get_set_temporally_unresolved(t, &p)
 	// ij(t, &p)
-	p.E_tau = calc_E_tau(&p, tau)
+
+	p.calc_mean_E_tau()
 
 	return Result{i: p.i, j: p.j, E_tau: p.E_tau}
 }
@@ -790,27 +814,4 @@ func ij_recur_unresolved(prevEdge *tree.Edge, curNode *tree.Node, pair *Pair, op
 		// then we carry on recurring down the tree
 		ij_recur_unresolved(e, curNode.Neigh()[k], pair, o, d)
 	}
-}
-
-// see equation (1) in Kryazhimskiy, Sergey, et al. "Prevalence of epistasis in the evolution of influenza A surface proteins." PLoS genetics 7.2 (2011): e1001301.
-// func calc_E_tau(p *Pair, tau float64) float64 {
-// 	d := 1 << p.m_ij
-// 	sum := 0.0
-// 	for i := range p.t_pi {
-// 		for j := range p.t_pi[i] {
-// 			sum += math.Exp((p.t_pi[i][j] * -1) / tau)
-// 		}
-// 	}
-// 	E_tau := sum / float64(d)
-// 	return E_tau
-// }
-
-func calc_E_tau(p *Pair, tau float64) float64 {
-	d := 1 << p.m_ij
-	sum := 0.0
-	for i := range p.t_pi {
-		sum += math.Exp((p.t_pi[i] * -1) / tau)
-	}
-	E_tau := sum / float64(d)
-	return E_tau
 }
