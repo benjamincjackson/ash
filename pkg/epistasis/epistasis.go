@@ -99,7 +99,6 @@ func Epistasis(t *tree.Tree, features []annotation.Region, threads int) {
 
 	aas_to_keep := get_aas_to_keep(t)
 	fmt.Println("number of amino acids to analyse is: " + strconv.Itoa(len(aas_to_keep)))
-	fmt.Println()
 
 	runtime.GOMAXPROCS(threads)
 
@@ -108,49 +107,6 @@ func Epistasis(t *tree.Tree, features []annotation.Region, threads int) {
 	// cResultsAgg := make(chan []Result)
 
 	cWriteDone := make(chan bool)
-
-	// m := get_m_total(t)
-
-	// aas_to_keep := []string{"AA=N:203", "AA=N:204", "AA=orf1ab:7013", "AA=orf1ab:7014", "AA=ORF7a:120", "AA=ORF7a:82", "AA=ORF8:27", "AA=ORF8:52", "AA=orf1ab:3676", "AA=orf1ab:3677", "AA=ORF8:120", "AA=ORF8:121", "AA=orf1ab:2453", "AA=orf1ab:2454", "AA=orf1ab:6967", "AA=orf1ab:6968", "AA=S:157", "AA=S:158", "AA=S:452", "AA=S:478"}
-
-	// for i := range aas_to_keep {
-	// 	for j := i + 1; j < len(aas_to_keep); j++ {
-	// 		aa1 := aas_to_keep[i]
-	// 		aa2 := aas_to_keep[j]
-	// 		m_ij := 0
-	// 		for _, e := range t.Edges() {
-	// 			// skip external branches
-	// 			if e.Right().Tip() {
-	// 				continue
-	// 			}
-	// 			i_present := false
-	// 			j_present := false
-	// 			for _, comment := range e.GetComments() {
-	// 				if strings.HasPrefix(comment, "syn=") {
-	// 					continue
-	// 				}
-	// 				site := strings.Join(strings.Split(comment, ":")[0:2], ":")
-	// 				if site == aa1 {
-	// 					i_present = true
-	// 				}
-	// 				if site == aa2 {
-	// 					j_present = true
-	// 				}
-	// 				if i_present && j_present {
-	// 					m_ij++
-	// 					break
-	// 				}
-	// 			}
-	// 		}
-
-	// 		if m_ij > 6 {
-	// 			other := m[aa1+"_"+aa2]
-	// 			fmt.Println(aa1 + "\t" + aa2 + "\t" + strconv.Itoa(m_ij) + "\t" + strconv.Itoa(other))
-	// 		}
-	// 	}
-	// }
-
-	// os.Exit(0)
 
 	go func() {
 		for i := range aas_to_keep {
@@ -658,6 +614,7 @@ func ij_recur(prevEdge *tree.Edge, curNode *tree.Node, pair *Pair, open bool, sy
 
 	// base state: if we have reached a tip, we don't want to do anything (per the original paper -
 	// mutations on external edges are discounted)
+	// NB - should never get this far
 	if curNode.Tip() {
 		return
 	}
@@ -669,6 +626,11 @@ func ij_recur(prevEdge *tree.Edge, curNode *tree.Node, pair *Pair, open bool, sy
 
 		// skip the rootward edge
 		if e == prevEdge {
+			continue
+		}
+
+		// skip external branches
+		if e.Right().Tip() {
 			continue
 		}
 
@@ -737,6 +699,7 @@ func ij_recur_unresolved(prevEdge *tree.Edge, curNode *tree.Node, pair *Pair, op
 
 	// base state: if we have reached a tip, we don't want to do anything (per the original paper -
 	// mutations on external edges are discounted)
+	// NB - should never get this far
 	if curNode.Tip() {
 		return
 	}
@@ -748,6 +711,11 @@ func ij_recur_unresolved(prevEdge *tree.Edge, curNode *tree.Node, pair *Pair, op
 
 		// skip the rootward edge
 		if e == prevEdge {
+			continue
+		}
+
+		// skip external branches
+		if e.Right().Tip() {
 			continue
 		}
 
