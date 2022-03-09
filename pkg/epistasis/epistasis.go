@@ -13,13 +13,6 @@ import (
 	"github.com/benjamincjackson/gotree/tree"
 )
 
-// a reduced-size struct which just the result for one pair in it
-type Result struct {
-	i     string
-	j     string
-	E_tau float64
-}
-
 // a struct containing info about one pair's consecutive mutations over the tree
 type Pair struct {
 	i             string                   // the name of the first site
@@ -100,23 +93,64 @@ func (p *Pair) set_order(m map[*tree.Edge][2]string) {
 // and "AA=" for amino acid changes
 // edge.SynLen is also set to the inferred synonymous branch length
 func Epistasis(t *tree.Tree, features []annotation.Region, threads int) {
-	// get_m_total(t)
-	// os.Exit(0)
 	// the mean synonymous distance between non-synonymous pairs:
 	tau := get_tau(t)
 	fmt.Println("tau is: " + strconv.FormatFloat(tau, 'f', 8, 64))
 
 	aas_to_keep := get_aas_to_keep(t)
 	fmt.Println("number of amino acids to analyse is: " + strconv.Itoa(len(aas_to_keep)))
-	// fmt.Println()
+	fmt.Println()
 
 	runtime.GOMAXPROCS(threads)
 
 	cPair := make(chan Pair, threads)
-	cResults := make(chan Result, threads)
-	cResultsAgg := make(chan []Result)
+	cResults := make(chan Pair, threads)
+	// cResultsAgg := make(chan []Result)
 
-	// cWriteDone := make(chan bool)
+	cWriteDone := make(chan bool)
+
+	// m := get_m_total(t)
+
+	// aas_to_keep := []string{"AA=N:203", "AA=N:204", "AA=orf1ab:7013", "AA=orf1ab:7014", "AA=ORF7a:120", "AA=ORF7a:82", "AA=ORF8:27", "AA=ORF8:52", "AA=orf1ab:3676", "AA=orf1ab:3677", "AA=ORF8:120", "AA=ORF8:121", "AA=orf1ab:2453", "AA=orf1ab:2454", "AA=orf1ab:6967", "AA=orf1ab:6968", "AA=S:157", "AA=S:158", "AA=S:452", "AA=S:478"}
+
+	// for i := range aas_to_keep {
+	// 	for j := i + 1; j < len(aas_to_keep); j++ {
+	// 		aa1 := aas_to_keep[i]
+	// 		aa2 := aas_to_keep[j]
+	// 		m_ij := 0
+	// 		for _, e := range t.Edges() {
+	// 			// skip external branches
+	// 			if e.Right().Tip() {
+	// 				continue
+	// 			}
+	// 			i_present := false
+	// 			j_present := false
+	// 			for _, comment := range e.GetComments() {
+	// 				if strings.HasPrefix(comment, "syn=") {
+	// 					continue
+	// 				}
+	// 				site := strings.Join(strings.Split(comment, ":")[0:2], ":")
+	// 				if site == aa1 {
+	// 					i_present = true
+	// 				}
+	// 				if site == aa2 {
+	// 					j_present = true
+	// 				}
+	// 				if i_present && j_present {
+	// 					m_ij++
+	// 					break
+	// 				}
+	// 			}
+	// 		}
+
+	// 		if m_ij > 6 {
+	// 			other := m[aa1+"_"+aa2]
+	// 			fmt.Println(aa1 + "\t" + aa2 + "\t" + strconv.Itoa(m_ij) + "\t" + strconv.Itoa(other))
+	// 		}
+	// 	}
+	// }
+
+	// os.Exit(0)
 
 	go func() {
 		for i := range aas_to_keep {
@@ -143,28 +177,29 @@ func Epistasis(t *tree.Tree, features []annotation.Region, threads int) {
 		}()
 	}
 
-	go aggregateResults(cResults, cResultsAgg)
+	// go aggregateResults(cResults, cResultsAgg)
 
-	// go printResults(cResults, cWriteDone)
+	go printResults(cResults, cWriteDone)
 
 	wgPairs.Wait()
 	close(cResults)
 
-	// _ = <-cWriteDone
+	_ = <-cWriteDone
 
-	results := <-cResultsAgg
+	// results := <-cResultsAgg
 
-	sort.SliceStable(results, func(i, j int) bool {
-		return results[i].E_tau > results[j].E_tau
-	})
+	// sort.SliceStable(results, func(i, j int) bool {
+	// 	return results[i].E_tau > results[j].E_tau
+	// })
 
-	for i := range results {
-		fmt.Println(results[i])
-	}
+	// for i := range results {
+	// 	fmt.Println(results[i])
+	// }
 }
 
 // possible temporary function to summarise all the temporarily-unresolved mutation-branch combinations
-func get_m_total(t *tree.Tree) {
+// func get_m_total(t *tree.Tree) {
+func get_m_total(t *tree.Tree) map[string]int {
 	m := make(map[string]int)
 	for _, e := range t.Edges() {
 		// skip external branches
@@ -182,24 +217,26 @@ func get_m_total(t *tree.Tree) {
 		}
 	}
 
-	type simple struct {
-		name  string
-		value int
-	}
+	// type simple struct {
+	// 	name  string
+	// 	value int
+	// }
 
-	key_val_pair := make([]simple, 0)
+	// key_val_pair := make([]simple, 0)
 
-	for k, v := range m {
-		key_val_pair = append(key_val_pair, simple{k, v})
-	}
+	// for k, v := range m {
+	// 	key_val_pair = append(key_val_pair, simple{k, v})
+	// }
 
-	sort.Slice(key_val_pair, func(i, j int) bool {
-		return key_val_pair[i].value > key_val_pair[j].value
-	})
+	// sort.Slice(key_val_pair, func(i, j int) bool {
+	// 	return key_val_pair[i].value > key_val_pair[j].value
+	// })
 
-	for _, kvp := range key_val_pair {
-		fmt.Println(kvp.name + " " + strconv.Itoa(kvp.value))
-	}
+	// for _, kvp := range key_val_pair {
+	// 	fmt.Println(kvp.name + " " + strconv.Itoa(kvp.value))
+	// }
+
+	return m
 }
 
 // following Kryazhimskiy, Sergey, et al. "Prevalence of epistasis in the evolution of influenza A surface proteins." PLoS genetics 7.2 (2011): e1001301,
@@ -224,6 +261,93 @@ func get_tau(t *tree.Tree) float64 {
 	return tau
 }
 
+// for recording the synonymous distances between nonsynon substitutions
+type Tns struct {
+	distances []float64
+	weights   []int
+}
+
+func (tns *Tns) add_distance(d float64) {
+	tns.distances = append(tns.distances, d)
+}
+
+func (tns *Tns) add_weight(w int) {
+	tns.weights = append(tns.weights, w)
+}
+
+func tau_recur(prevEdge *tree.Edge, curNode *tree.Node, tns *Tns) {
+
+	// base state: if we have reached a tip, we don't have to do any more
+	if curNode.Tip() {
+		return
+	}
+
+	for i, e := range curNode.Edges() {
+
+		// skip the rootward edge
+		if e == prevEdge {
+			continue
+		}
+
+		// first, if there are no non-synonymous mutations on this branch, we can skip the next two steps
+		AAs := e.Get_AA_residues()
+		switch {
+		// if there is 1, we set the synonymous distance and collect the downstream muts starting from here:
+		case len(AAs) == 1:
+			synDist := e.SynLen / 2
+			n := 1
+			collect_distances(prevEdge, curNode, tns, n, synDist)
+
+		// if there is more than one, we first add all possible pairs for this branch, the collect the downstream muts
+		case len(AAs) > 1:
+
+			for j := range AAs {
+				for k := j + 1; k < len(AAs); k++ {
+					_ = k
+					tns.add_distance(float64(len(AAs)) * float64(len(AAs)) * (e.SynLen / 3))
+					tns.add_weight(len(AAs) * len(AAs))
+				}
+			}
+
+			synDist := e.SynLen / 2
+			// n is the number of non-synon mutations on this branch - need this to get all the pairs
+			n := len(AAs)
+			collect_distances(prevEdge, curNode, tns, n, synDist)
+		}
+
+		// then we carry on recurring down the tree
+		tau_recur(e, curNode.Neigh()[i], tns)
+	}
+}
+
+func collect_distances(prevEdge *tree.Edge, curNode *tree.Node, tns *Tns, n int, synDist float64) {
+
+	// base state: if we have reached a tip, we don't want to do anything (per the original paper -
+	// mutations on external edges are discounted)
+	if curNode.Tip() {
+		return
+	}
+
+	for i, e := range curNode.Edges() {
+
+		// skip the rootward edge
+		if e == prevEdge {
+			continue
+		}
+
+		AAs := e.Get_AA_residues()
+		if len(AAs) > 0 {
+			tns.add_distance(float64(n) * float64(len(AAs)) * (synDist + (e.SynLen / 2)))
+			tns.add_weight(n * len(AAs))
+		}
+
+		d := synDist + e.SynLen
+
+		// we carry on recurring down the tree
+		collect_distances(e, curNode.Neigh()[i], tns, n, d)
+	}
+}
+
 // traverse the tree, and return a list of residues where changes occur at least once
 func get_aas_to_keep(t *tree.Tree) []string {
 	// m is just a map from residue to counts of it
@@ -236,11 +360,7 @@ func get_aas_to_keep(t *tree.Tree) []string {
 		// AAs
 		AAs := e.Get_AA_residues()
 		for _, AA := range AAs {
-			if _, ok := m[AA]; ok {
-				m[AA]++
-			} else {
-				m[AA] = 1
-			}
+			m[AA]++
 		}
 	}
 
@@ -255,7 +375,7 @@ func get_aas_to_keep(t *tree.Tree) []string {
 	return tokeep
 }
 
-func process_pairs(cPairIn chan Pair, cPairOut chan Result, t *tree.Tree, tau float64) {
+func process_pairs(cPairIn chan Pair, cPairOut chan Pair, t *tree.Tree, tau float64) {
 
 	for p := range cPairIn {
 		cPairOut <- process_one_pair(p, t, tau)
@@ -263,7 +383,7 @@ func process_pairs(cPairIn chan Pair, cPairOut chan Result, t *tree.Tree, tau fl
 
 }
 
-func process_one_pair(p Pair, t *tree.Tree, tau float64) Result {
+func process_one_pair(p Pair, t *tree.Tree, tau float64) Pair {
 
 	i := p.get_i()
 	j := p.get_j()
@@ -303,29 +423,48 @@ func process_one_pair(p Pair, t *tree.Tree, tau float64) Result {
 
 	p.calc_mean_E_tau()
 
-	return Result{i: p.i, j: p.j, E_tau: p.E_tau}
+	return p
 }
 
-func aggregateResults(cResultsIn chan Result, cResultsOut chan []Result) {
+func get_temporally_unresolved(t *tree.Tree, p *Pair) (int, []*tree.Edge) {
+	var i_present bool
+	var j_present bool
+	var site string
 
-	results := make([]Result, 0)
+	i := p.get_i()
+	j := p.get_j()
 
-	for r := range cResultsIn {
-		results = append(results, r)
+	m_ij := 0
+
+	unresolved := make([]*tree.Edge, 0)
+
+	for _, e := range t.Edges() {
+		// skip external branches
+		if e.Right().Tip() {
+			continue
+		}
+		i_present = false
+		j_present = false
+		for _, comment := range e.GetComments() {
+			if strings.HasPrefix(comment, "syn=") {
+				continue
+			}
+			site = strings.Join(strings.Split(comment, ":")[0:2], ":")
+			if site == i {
+				i_present = true
+			}
+			if site == j {
+				j_present = true
+			}
+			if i_present && j_present {
+				m_ij++
+				unresolved = append(unresolved, e)
+				break
+			}
+		}
 	}
 
-	cResultsOut <- results
-}
-
-func printResults(cResultsIn chan Result, cWriteDone chan bool) {
-
-	fmt.Println("i,j,e_tau")
-
-	for r := range cResultsIn {
-		fmt.Println(r.i + "," + r.j + "," + strconv.FormatFloat(r.E_tau, 'f', 6, 64))
-	}
-
-	cWriteDone <- true
+	return m_ij, unresolved
 }
 
 // // Traverse the tree, storing the information about the changes present on branches.
@@ -413,6 +552,11 @@ func printResults(cResultsIn chan Result, cWriteDone chan bool) {
 // 	return subsets
 // }
 
+// order takes two arguments - n is m_ij, so there are 2^n possible
+// orders of binary choices. m is, which binary choice out of the 2^m_ij possible
+// ones is this?
+// it returns an array of 0s and 1s which represent the choices at each of the n
+// unresolved branches for this (mth) order.
 func order(n, m int) []int {
 	if n == 0 {
 		return make([]int, 0)
@@ -426,44 +570,8 @@ func order(n, m int) []int {
 			order[object] = 1
 		}
 	}
+
 	return order
-}
-
-func get_temporally_unresolved(t *tree.Tree, p *Pair) (int, []*tree.Edge) {
-	var i_present bool
-	var j_present bool
-	var site string
-
-	i := p.get_i()
-	j := p.get_j()
-
-	m_ij := 0
-
-	unresolved := make([]*tree.Edge, 0)
-
-	for _, e := range t.Edges() {
-		i_present = false
-		j_present = false
-		for _, comment := range e.GetComments() {
-			if strings.HasPrefix(comment, "syn=") {
-				continue
-			}
-			site = strings.Join(strings.Split(comment, ":")[0:2], ":")
-			if site == i {
-				i_present = true
-			}
-			if site == j {
-				j_present = true
-			}
-			if i_present && j_present {
-				m_ij++
-				unresolved = append(unresolved, e)
-				break
-			}
-		}
-	}
-
-	return m_ij, unresolved
 }
 
 // func get_set_temporally_unresolved(t *tree.Tree, p *Pair) {
@@ -519,94 +627,6 @@ func get_temporally_unresolved(t *tree.Tree, p *Pair) (int, []*tree.Edge) {
 // 		p.set_order(n, om)
 // 	}
 // }
-
-// for recording the synonymous distances between nonsynon substitutions
-type Tns struct {
-	distances []float64
-	weights   []int
-}
-
-func (tns *Tns) add_distance(d float64) {
-	tns.distances = append(tns.distances, d)
-}
-
-func (tns *Tns) add_weight(w int) {
-	tns.weights = append(tns.weights, w)
-}
-
-func tau_recur(prevEdge *tree.Edge, curNode *tree.Node, tns *Tns) {
-
-	// base state: if we have reached a tip, we don't want to do anything (per the original paper -
-	// mutations on external edges are discounted)
-	if curNode.Tip() {
-		return
-	}
-
-	for i, e := range curNode.Edges() {
-
-		// skip the rootward edge
-		if e == prevEdge {
-			continue
-		}
-
-		// first, if there are no non-synonymous mutations on this branch, we can skip the next two steps
-		AAs := e.Get_AA_residues()
-		switch {
-		// if there is 1, we set the synonymous distance and collect the downstream muts starting from here:
-		case len(AAs) == 1:
-			synDist := e.SynLen / 2
-			n := 1
-			collect_distances(prevEdge, curNode, tns, n, synDist)
-
-		// if there is more than one, we first add all possible pairs for this branch, the collect the downstream muts
-		case len(AAs) > 1:
-
-			for j := range AAs {
-				for k := j + 1; k < len(AAs); k++ {
-					_ = k
-					tns.add_distance(float64(len(AAs)) * float64(len(AAs)) * (e.SynLen / 3))
-					tns.add_weight(len(AAs) * len(AAs))
-				}
-			}
-
-			synDist := e.SynLen / 2
-			// n is the number of non-synon mutations on this branch - need this to get all the pairs
-			n := len(AAs)
-			collect_distances(prevEdge, curNode, tns, n, synDist)
-		}
-
-		// then we carry on recurring down the tree
-		tau_recur(e, curNode.Neigh()[i], tns)
-	}
-}
-
-func collect_distances(prevEdge *tree.Edge, curNode *tree.Node, tns *Tns, n int, synDist float64) {
-
-	// base state: if we have reached a tip, we don't want to do anything (per the original paper -
-	// mutations on external edges are discounted)
-	if curNode.Tip() {
-		return
-	}
-
-	for i, e := range curNode.Edges() {
-
-		// skip the rootward edge
-		if e == prevEdge {
-			continue
-		}
-
-		AAs := e.Get_AA_residues()
-		if len(AAs) > 0 {
-			tns.add_distance(float64(n) * float64(len(AAs)) * (synDist + (e.SynLen / 2)))
-			tns.add_weight(n * len(AAs))
-		}
-
-		d := synDist + e.SynLen
-
-		// we carry on recurring down the tree
-		collect_distances(e, curNode.Neigh()[i], tns, n, d)
-	}
-}
 
 // func processChunktemporal(t *tree.Tree, pairs []Pair) {
 // 	for i := range pairs {
@@ -683,7 +703,7 @@ func ij_recur(prevEdge *tree.Edge, curNode *tree.Node, pair *Pair, open bool, sy
 		// if there aren't.
 		var d float64
 
-		// o is a boolean array of length 2, [i is present (last) on the parent branch, j is present (last) on the parent branch]
+		// o is boolean: i is present (last) on a parent branch
 		var o bool
 
 		// we switch on whether there is an ancestral mutation at site i, and whether there are mutations on this branch at sites i or j
@@ -758,7 +778,7 @@ func ij_recur_unresolved(prevEdge *tree.Edge, curNode *tree.Node, pair *Pair, op
 		// if there aren't.
 		var d float64
 
-		// o is a boolean array of length 2, [i is present (last) on the parent branch, j is present (last) on the parent branch]
+		// o is boolean: i is present (last) on a parent branch
 		var o bool
 
 		// we switch on whether there is an ancestral mutation at site i, and whether there are mutations on this branch at sites i or j for this order
@@ -814,4 +834,26 @@ func ij_recur_unresolved(prevEdge *tree.Edge, curNode *tree.Node, pair *Pair, op
 		// then we carry on recurring down the tree
 		ij_recur_unresolved(e, curNode.Neigh()[k], pair, o, d)
 	}
+}
+
+func aggregateResults(cResultsIn chan Pair, cResultsOut chan []Pair) {
+
+	results := make([]Pair, 0)
+
+	for r := range cResultsIn {
+		results = append(results, r)
+	}
+
+	cResultsOut <- results
+}
+
+func printResults(cResultsIn chan Pair, cWriteDone chan bool) {
+
+	fmt.Println("i,j,m_ij,e_tau")
+
+	for p := range cResultsIn {
+		fmt.Println(p.i + "," + p.j + "," + strconv.Itoa(p.m_ij) + "," + strconv.FormatFloat(p.E_tau, 'f', 6, 64))
+	}
+
+	cWriteDone <- true
 }
